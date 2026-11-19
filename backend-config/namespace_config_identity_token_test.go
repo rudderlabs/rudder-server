@@ -1,15 +1,20 @@
 package backendconfig
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -144,6 +149,64 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		require.Equal(t, []string{"Bearer token-1", "Bearer token-2"}, rec.headers, "v1 sees the token v2 loaded")
 	})
 
+	t.Run("polling v1 and v2 picks up a rotated token and keeps the last one when the file goes bad", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "token")
+			writeToken(t, path, "token-1")
+			v2Body := v2Doc{Workspaces: map[string]any{"ws-1": v2Workspaceof("2026-07-24T17:01:55.777Z")}}.json(t)
+			var headers []string
+			// in memory: a real connection would not count as durably blocked inside the bubble
+			client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				version, body := "v1", []byte(`{}`)
+				if strings.HasPrefix(r.URL.Path, "/configuration/v2/") {
+					version, body = "v2", v2Body
+				}
+				headers = append(headers, version+" "+r.Header.Get("Authorization"))
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(body)), Request: r}, nil
+			})}
+			conf := config.New()
+			conf.Set("DATAPLANE_IDENTITY_TOKEN_FILE", path)
+			nc := &namespaceConfig{
+				config:              conf,
+				logger:              logger.NOP,
+				stats:               stats.NOP,
+				client:              client,
+				configBackendURL:    &url.URL{Scheme: "http", Host: "config.test"},
+				namespace:           "a-namespace",
+				hostedServiceSecret: "service-secret",
+			}
+			require.NoError(t, nc.SetUp())
+			v2, err := newV2ConfigFetcher(nc)
+			require.NoError(t, err)
+			poll := func() []string {
+				t.Helper()
+				headers = nil
+				_, err := nc.Get(ctx)
+				require.NoError(t, err)
+				_, err = v2.Get(ctx)
+				require.NoError(t, err)
+				return headers
+			}
+			sent := func(token string) []string { return []string{"v1 Bearer " + token, "v2 Bearer " + token} }
+
+			require.Equal(t, sent("token-1"), poll())
+
+			writeToken(t, path, "token-2")
+			time.Sleep(9 * time.Second)
+			require.Equal(t, sent("token-1"), poll(), "reused within the window")
+			time.Sleep(time.Second)
+			require.Equal(t, sent("token-2"), poll(), "reread once the window has passed")
+
+			writeToken(t, path, " \n")
+			time.Sleep(10 * time.Second)
+			require.Equal(t, sent("token-2"), poll(), "an empty file keeps the last token")
+
+			require.NoError(t, os.Remove(path))
+			time.Sleep(10 * time.Second)
+			require.Equal(t, sent("token-2"), poll(), "a missing file keeps the last token")
+		})
+	})
+
 	t.Run("v1 sends the secret when the feature is off", func(t *testing.T) {
 		rec := &headerRecorder{}
 		ts := httptest.NewServer(record(rec))
@@ -176,3 +239,7 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		require.Len(t, srv.headers, 1) // v2Server requires the Basic secret
 	})
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
