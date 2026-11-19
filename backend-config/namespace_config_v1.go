@@ -7,13 +7,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
 
+	"github.com/rudderlabs/rudder-cp-sdk/tokenfile"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -34,8 +32,7 @@ type v1ConfigFetcher struct {
 
 	namespace                string
 	identity                 identity.Identifier
-	identityTokenFile        string
-	identityToken            cachedToken
+	identityToken            *tokenfile.Token
 	configBackendURL         *url.URL
 	cpRouterURL              string
 	incrementalConfigUpdates bool
@@ -53,7 +50,7 @@ func newV1ConfigFetcher(nc *namespaceConfig) *v1ConfigFetcher {
 
 		namespace:                nc.namespace,
 		identity:                 nc.Identity(),
-		identityTokenFile:        nc.identityTokenFile,
+		identityToken:            nc.identityToken,
 		configBackendURL:         nc.configBackendURL,
 		cpRouterURL:              nc.cpRouterURL,
 		incrementalConfigUpdates: nc.incrementalConfigUpdates,
@@ -171,58 +168,13 @@ func (f *v1ConfigFetcher) prepareHTTPRequest(ctx context.Context, url string) (*
 	return req, nil
 }
 
-// setAuth sends the workload identity token as a Bearer credential instead of the Basic secret once the token file
-// has been read non-empty; until then, including when no file is set, it sends the Basic secret.
+// setAuth sends the workload identity token as a Bearer credential when one is configured, otherwise the Basic secret.
 func (f *v1ConfigFetcher) setAuth(req *http.Request) {
-	if token := f.identityToken.get(f.identityTokenFile, f.logger); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+	if f.identityToken != nil {
+		req.Header.Set("Authorization", "Bearer "+f.identityToken.Get())
 		return
 	}
 	req.SetBasicAuth(f.identity.BasicAuth())
-}
-
-// identityTokenMaxAge is how long a token read from the file is reused. The kubelet rewrites the file at about 80%
-// of the token's lifetime (8 of 10 minutes by default), so a token read under a minute ago is still valid.
-const identityTokenMaxAge = time.Minute
-
-// cachedToken reads a token file at most once per identityTokenMaxAge.
-type cachedToken struct {
-	mu         sync.Mutex
-	token      string
-	readAt     time.Time
-	unreadable bool             // the last read failed: warn again only after a read succeeds
-	now        func() time.Time // nil means time.Now; set by tests
-}
-
-// get returns the token in path. An unset path, or no successful read yet, returns an empty token. A failed or
-// empty read keeps the last good token, which the kubelet only replaces with a newer one. A failed read is logged
-// once, when the file turns unreadable.
-func (t *cachedToken) get(path string, log logger.Logger) string {
-	if path == "" {
-		return ""
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	now := time.Now()
-	if t.now != nil {
-		now = t.now()
-	}
-	if t.token != "" && now.Sub(t.readAt) < identityTokenMaxAge {
-		return t.token
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if !t.unreadable {
-			t.unreadable = true
-			log.Warnn("Cannot read the identity token file", logger.NewStringField("path", path), obskit.Error(err))
-		}
-		return t.token
-	}
-	t.unreadable = false
-	if token := strings.TrimSpace(string(data)); token != "" {
-		t.token, t.readAt = token, now
-	}
-	return t.token
 }
 
 func (f *v1ConfigFetcher) makeHTTPRequest(req *http.Request) ([]byte, error) {

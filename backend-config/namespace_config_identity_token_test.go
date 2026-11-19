@@ -3,6 +3,7 @@ package backendconfig
 import (
 	"context"
 	"crypto/tls"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,14 +12,11 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
@@ -53,10 +51,11 @@ func TestNamespaceIdentityToken(t *testing.T) {
 			_, _ = w.Write([]byte(`{}`))
 		}
 	}
-	newV1 := func(t *testing.T, serverURL, tokenFile string) *namespaceConfig {
-		t.Helper()
+	setUp := func(serverURL, tokenFile string) (*namespaceConfig, error) {
 		u, err := url.Parse(serverURL)
-		require.NoError(t, err)
+		if err != nil {
+			return nil, err
+		}
 		conf := config.New()
 		if tokenFile != "" {
 			conf.Set("DATAPLANE_IDENTITY_TOKEN_FILE", tokenFile)
@@ -69,24 +68,30 @@ func TestNamespaceIdentityToken(t *testing.T) {
 			namespace:           "a-namespace",
 			hostedServiceSecret: "service-secret",
 		}
-		require.NoError(t, nc.SetUp())
+		return nc, nc.SetUp()
+	}
+	newV1 := func(t *testing.T, serverURL, tokenFile string) *namespaceConfig {
+		t.Helper()
+		nc, err := setUp(serverURL, tokenFile)
+		require.NoError(t, err)
 		return nc
 	}
 
-	t.Run("setup reads the token file path from DATAPLANE_IDENTITY_TOKEN_FILE", func(t *testing.T) {
+	t.Run("setup fails when the token file is set but missing or empty", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "token")
-		nc := newV1(t, "http://localhost", path)
-		require.Equal(t, path, nc.identityTokenFile)
+		_, err := setUp("http://localhost", path)
+		require.ErrorIs(t, err, fs.ErrNotExist)
 
-		nc = newV1(t, "http://localhost", "")
-		require.Empty(t, nc.identityTokenFile)
+		writeToken(t, path, " \n")
+		_, err = setUp("http://localhost", path)
+		require.Error(t, err)
 	})
 
-	t.Run("v1 sends the token instead of the secret and reuses it for a minute, retries included", func(t *testing.T) {
+	t.Run("v1 sends the token instead of the secret, retries included", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "token")
 		writeToken(t, path, "token-1\n")
 		rec := &headerRecorder{respond: func(n int, w http.ResponseWriter) bool {
-			if n == 1 { // rotate the token and fail: the retry still reuses the cached one
+			if n == 1 { // rotate the token and fail: the retry still reuses the token read at setup
 				writeToken(t, path, "token-2")
 				w.WriteHeader(http.StatusInternalServerError)
 				return true
@@ -95,70 +100,28 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		}}
 		ts := httptest.NewServer(record(rec))
 		defer ts.Close()
-		nc := newV1(t, ts.URL, path)
-		now := time.Now()
-		nc.fetcher.(*v1ConfigFetcher).identityToken.now = func() time.Time { return now }
 
-		_, err := nc.Get(ctx)
+		_, err := newV1(t, ts.URL, path).Get(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"Bearer token-1", "Bearer token-1"}, rec.headers)
-
-		now = now.Add(identityTokenMaxAge)
-		_, err = nc.Get(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Bearer token-2", rec.headers[2], "a minute later the rotated token is read")
-
-		writeToken(t, path, " \n")
-		now = now.Add(identityTokenMaxAge)
-		_, err = nc.Get(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Bearer token-2", rec.headers[3], "an empty file keeps the last token read")
-
-		require.NoError(t, os.Remove(path))
-		_, err = nc.Get(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Bearer token-2", rec.headers[4], "a missing file keeps the last token read")
-
-		writeToken(t, path, "token-3")
-		_, err = nc.Get(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Bearer token-3", rec.headers[5], "failed reads do not restart the minute, so the next good read is used at once")
 	})
 
-	t.Run("an unreadable file is logged once until it is read again", func(t *testing.T) {
+	t.Run("v1 and v2 share one token", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "token")
-		log := mock_logger.NewMockLogger(gomock.NewController(t))
-		log.EXPECT().Warnn("Cannot read the identity token file", logger.NewStringField("path", path), gomock.Any()).Times(2)
-		now := time.Now()
-		tok := &cachedToken{now: func() time.Time { return now }}
-
-		require.Empty(t, tok.get(path, log), "missing: warns")
-		require.Empty(t, tok.get(path, log), "still missing: no warning")
 		writeToken(t, path, "token-1")
-		require.Equal(t, "token-1", tok.get(path, log))
-		require.NoError(t, os.Remove(path))
-		now = now.Add(identityTokenMaxAge)
-		require.Equal(t, "token-1", tok.get(path, log), "missing again: warns and keeps the last token")
-		require.Equal(t, "token-1", tok.get(path, log), "still missing: no warning")
-	})
-
-	t.Run("v1 sends the secret while the file is missing or empty", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "token")
 		rec := &headerRecorder{}
 		ts := httptest.NewServer(record(rec))
 		defer ts.Close()
 		nc := newV1(t, ts.URL, path)
-
 		_, err := nc.Get(ctx)
 		require.NoError(t, err)
-		writeToken(t, path, " \n")
+
+		writeToken(t, path, "token-2")
+		_, err = newV2ConfigFetcher(nc) // the control plane client loads the token it is given
+		require.NoError(t, err)
 		_, err = nc.Get(ctx)
 		require.NoError(t, err)
-		writeToken(t, path, "token-1")
-		_, err = nc.Get(ctx)
-		require.NoError(t, err)
-		require.Equal(t, []string{"basic:service-secret", "basic:service-secret", "Bearer token-1"}, rec.headers,
-			"no token is cached until a read succeeds, so the first good read is used at once")
+		require.Equal(t, []string{"Bearer token-1", "Bearer token-2"}, rec.headers, "v1 sees the token v2 loaded")
 	})
 
 	t.Run("v1 sends the secret when the feature is off", func(t *testing.T) {
@@ -219,7 +182,8 @@ func TestNamespaceIdentityToken(t *testing.T) {
 			{"v2", v2Doc{Workspaces: map[string]any{"ws-1": v2Workspaceof("2026-07-24T17:01:55.777Z")}}.json(t), func(t *testing.T, start *url.URL) error {
 				var nc *namespaceConfig
 				fetcher, _ := newV2TestFetcher(t, &v2Server{t: t, secret: "service-secret"}, func(c *namespaceConfig) {
-					nc, c.client, c.configBackendURL, c.identityTokenFile = c, nil, start, path // nil: the client is built by SetUp
+					nc, c.client, c.configBackendURL = c, nil, start // nil: the client is built by SetUp
+					c.config.Set("DATAPLANE_IDENTITY_TOKEN_FILE", path)
 				})
 				nc.client.Transport = transport
 				_, err := fetcher.Get(ctx)
@@ -254,7 +218,7 @@ func TestNamespaceIdentityToken(t *testing.T) {
 		writeToken(t, path, " a-token\n")
 		srv := &v2Server{t: t, secret: "service-secret", bearer: "a-token"}
 		srv.responses = [][]byte{v2Doc{Workspaces: map[string]any{"ws-1": v2Workspaceof("2026-07-24T17:01:55.777Z")}}.json(t)}
-		fetcher, _ := newV2TestFetcher(t, srv, func(nc *namespaceConfig) { nc.identityTokenFile = path })
+		fetcher, _ := newV2TestFetcher(t, srv, func(nc *namespaceConfig) { nc.config.Set("DATAPLANE_IDENTITY_TOKEN_FILE", path) })
 
 		_, err := fetcher.Get(ctx)
 		require.NoError(t, err)
