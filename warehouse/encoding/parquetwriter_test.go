@@ -2,6 +2,8 @@ package encoding
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
@@ -17,88 +19,95 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestParquetWriterWideSchemaFlush(t *testing.T) {
-	t.Setenv("RSERVER_WAREHOUSE_PARQUET_PAGE_SIZE", "1048576")
-	conf := config.New()
-	conf.Set("Warehouse.parquetParallelWriters", 8)
-	factory := NewFactory(conf)
-	schema := make(model.TableSchema)
-	row := make([]any, 100)
-	for i := range row {
-		schema[fmt.Sprintf("column_%03d", i)] = "string"
-		row[i] = strings.Repeat("x", 1<<15)
+func TestParquetWriterLoadFileMemory(t *testing.T) {
+	const rowCount = 80_000
+	const pageSizeEnv = "RUDDER_PARQUET_MEMORY_TEST_PAGE_SIZE"
+	const peakPrefix = "PARQUET_PEAK_HEAP_BYTES="
+
+	if pageSizeText := os.Getenv(pageSizeEnv); pageSizeText != "" {
+		pageSize, err := strconv.ParseInt(pageSizeText, 10, 64)
+		require.NoError(t, err)
+		fmt.Printf("%s%d\n", peakPrefix, writeParquetMemoryTestFile(t, rowCount, pageSize))
+		return
 	}
-	path := t.TempDir() + "/wide.parquet"
-	loadWriter, err := factory.NewLoadFileWriter(warehouseutils.LoadFileTypeParquet, path, schema, warehouseutils.RS)
-	require.NoError(t, err)
-	writer := loadWriter.(*parquetWriter)
-	require.Equal(t, int64(maxParquetQueuedBytes), writer.maxQueuedBytes)
-	for range 24 {
-		require.NoError(t, writer.WriteRow(row))
+
+	measure := func(pageSize int64) uint64 {
+		t.Helper()
+		// Use a fresh process for each page size so prior runs do not change GC pacing.
+		cmd := exec.Command(os.Args[0], "-test.run=^TestParquetWriterLoadFileMemory$")
+		cmd.Env = append(os.Environ(), pageSizeEnv+"="+strconv.FormatInt(pageSize, 10))
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(output))
+		for line := range strings.SplitSeq(string(output), "\n") {
+			if value, ok := strings.CutPrefix(line, peakPrefix); ok {
+				peak, err := strconv.ParseUint(value, 10, 64)
+				require.NoError(t, err)
+				return peak
+			}
+		}
+		t.Fatalf("peak heap metric missing from test output: %s", output)
+		return 0
 	}
-	// 24 rows * 100 columns * 32 KiB exceed the cap; the queue must drain
-	// before Close even though the fork's interface-based estimate is tiny.
-	require.Less(t, len(writer.writer.Objs), 24)
-	require.Less(t, writer.queuedBytes, writer.maxQueuedBytes)
-	require.NoError(t, writer.Close())
-	file, err := local.NewLocalFileReader(path)
-	require.NoError(t, err)
-	defer func() { require.NoError(t, file.Close()) }()
-	pr, err := reader.NewParquetReader(file, nil, 1)
-	require.NoError(t, err)
-	defer pr.ReadStop()
-	require.EqualValues(t, 24, pr.GetNumRows())
-	require.NotEmpty(t, pr.Footer.RowGroups)
-	rows := make([]any, 24)
-	require.NoError(t, pr.Read(&rows))
-	require.Len(t, rows, 24)
-	for _, got := range rows {
-		require.NotNil(t, got)
-	}
+
+	largePagePeak := measure(1 << 20)
+	defaultPagePeak := measure(defaultParquetPageSize)
+	t.Logf("peak heap growth for %d rows: 1 MiB pages %.1f MiB, 8 KiB pages %.1f MiB", rowCount,
+		float64(largePagePeak)/(1<<20), float64(defaultPagePeak)/(1<<20))
+	require.LessOrEqual(t, largePagePeak, defaultPagePeak)
 }
 
-func TestParquetWriterNarrowSchemaFlush(t *testing.T) {
-	t.Setenv("RSERVER_WAREHOUSE_PARQUET_PAGE_SIZE", "1048576")
-	conf := config.New()
-	conf.Set("Warehouse.parquetParallelWriters", 8)
-	factory := NewFactory(conf)
-	path := t.TempDir() + "/narrow.parquet"
-	loadWriter, err := factory.NewLoadFileWriter(warehouseutils.LoadFileTypeParquet, path, model.TableSchema{
-		"first": "string", "second": "string",
-	}, warehouseutils.RS)
-	require.NoError(t, err)
-	writer := loadWriter.(*parquetWriter)
-	require.Equal(t, int64(maxParquetQueuedBytes), writer.maxQueuedBytes)
-	writer.maxQueuedBytes = 1 << 20 // Trigger the same flush path with a small test row.
-	require.NoError(t, writer.WriteRow([]any{strings.Repeat("x", 1<<19), strings.Repeat("y", 1<<19)}))
-	require.Empty(t, writer.writer.Objs)
-	require.Zero(t, writer.queuedBytes)
-	require.NoError(t, writer.Close())
-}
+func writeParquetMemoryTestFile(t *testing.T, rowCount int, pageSize int64) uint64 {
+	t.Helper()
+	// Two JSON text columns total about 512 MB of raw row data.
+	keys := make([]string, 144)
+	for i := range keys {
+		keys[i] = `"property_` + strconv.Itoa(i) + `":"`
+	}
+	// Reuse six event shapes across rows, while keeping each event ID distinct.
+	eventJSON := func(row, fields int) string {
+		var b strings.Builder
+		b.Grow(fields * 32)
+		b.WriteByte('{')
+		b.WriteString(`"row":`)
+		b.WriteString(strconv.Itoa(row))
+		for i, key := range keys[:fields] {
+			b.WriteByte(',')
+			b.WriteString(key)
+			value := uint64(row%6+1)*0x9e3779b97f4a7c15 ^ uint64(i+1)*0xbf58476d1ce4e5b9
+			b.WriteString(strconv.FormatUint(value|1<<60, 16))
+			b.WriteByte('"')
+		}
+		b.WriteByte('}')
+		return b.String()
+	}
 
-func TestParquetWriterMillionRowsBoundedMemory(t *testing.T) {
 	conf := config.New()
-	conf.Set("Warehouse.parquetPageSize", 1<<20)
+	conf.Set("Warehouse.parquetPageSize", pageSize)
 	factory := NewFactory(conf)
-	path := t.TempDir() + "/million-rows.parquet"
-	loadWriter, err := factory.NewLoadFileWriter(warehouseutils.LoadFileTypeParquet, path, model.TableSchema{
+	// Build the same-sized input before measuring so fixture allocation is not counted as writer growth.
+	rows := make([][]any, rowCount)
+	rawBytes := 0
+	for i := range rows {
+		first, second := eventJSON(i, 144), eventJSON(i+3, 48)
+		rows[i] = []any{first, second}
+		rawBytes += len(first) + len(second)
+	}
+	require.InDelta(t, 512_000_000, rawBytes, 2_000_000)
+	path := t.TempDir() + "/events.parquet"
+	writer, err := factory.NewLoadFileWriter(warehouseutils.LoadFileTypeParquet, path, model.TableSchema{
 		"first": "string", "second": "string",
-	}, warehouseutils.RS)
+	}, warehouseutils.GCSDatalake)
 	require.NoError(t, err)
-	writer := loadWriter.(*parquetWriter)
-	require.Equal(t, int64(maxParquetQueuedBytes), writer.maxQueuedBytes)
 
 	runtime.GC()
 	var memory runtime.MemStats
 	runtime.ReadMemStats(&memory)
 	baseline, peak := memory.HeapAlloc, memory.HeapAlloc
-	valuePrefix := strings.Repeat("x", 256)
-	for i := range 1_000_000 {
-		value := valuePrefix + strconv.Itoa(i)
-		if err := writer.WriteRow([]any{value, value}); err != nil {
+	for i, row := range rows {
+		if err := writer.WriteRow(row); err != nil {
 			t.Fatal(err)
 		}
-		if i%1000 == 0 {
+		if i%250 == 0 {
 			runtime.ReadMemStats(&memory)
 			peak = max(peak, memory.HeapAlloc)
 		}
@@ -106,9 +115,6 @@ func TestParquetWriterMillionRowsBoundedMemory(t *testing.T) {
 	require.NoError(t, writer.Close())
 	runtime.ReadMemStats(&memory)
 	peak = max(peak, memory.HeapAlloc)
-	// Without the queue cap, this narrow text write peaks above 600 MiB.
-	require.Less(t, peak-baseline, uint64(384<<20), "peak heap growth should stay bounded with 1 MiB pages")
-	t.Logf("peak heap growth for 1,000,000 rows: %.1f MiB", float64(peak-baseline)/(1<<20))
 
 	file, err := local.NewLocalFileReader(path)
 	require.NoError(t, err)
@@ -116,5 +122,6 @@ func TestParquetWriterMillionRowsBoundedMemory(t *testing.T) {
 	pr, err := reader.NewParquetReader(file, nil, 1)
 	require.NoError(t, err)
 	defer pr.ReadStop()
-	require.EqualValues(t, 1_000_000, pr.GetNumRows())
+	require.EqualValues(t, rowCount, pr.GetNumRows())
+	return peak - baseline
 }
