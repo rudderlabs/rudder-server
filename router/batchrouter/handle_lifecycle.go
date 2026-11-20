@@ -215,6 +215,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")
 	brt.customDatePrefix = config.GetReloadableStringVar("", "BatchRouter.customDatePrefix")
 	brt.maxImportingQueryIterations = config.GetReloadableIntVar(100, 1, "BatchRouter."+brt.destType+".maxImportingQueryIterations", "BatchRouter.maxImportingQueryIterations")
+	brt.writeImportIDRefs = config.GetReloadableBoolVar(false, "BatchRouter."+brt.destType+".writeImportIdRefs", "BatchRouter.writeImportIdRefs")
 }
 
 func (brt *Handle) startAsyncDestinationManager() {
@@ -222,11 +223,6 @@ func (brt *Handle) startAsyncDestinationManager() {
 		"module":   "batch_router",
 		"destType": brt.destType,
 	}
-	brt.asyncPollTimeStat = stats.Default.NewTaggedStat("async_poll_time", stats.TimerType, asyncStatTags)
-	brt.asyncFailedJobsTimeStat = stats.Default.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, asyncStatTags)
-	brt.asyncSuccessfulJobCount = stats.Default.NewTaggedStat("async_successful_job_count", stats.CountType, asyncStatTags)
-	brt.asyncFailedJobCount = stats.Default.NewTaggedStat("async_failed_job_count", stats.CountType, asyncStatTags)
-	brt.asyncAbortedJobCount = stats.Default.NewTaggedStat("async_aborted_job_count", stats.CountType, asyncStatTags)
 	brt.asyncGetImportingIterations = stats.Default.NewTaggedStat("async_get_importing_iterations", stats.HistogramType, asyncStatTags)
 
 	brt.asyncDestinationStruct = make(map[string]*asynccommon.AsyncDestinationStruct)

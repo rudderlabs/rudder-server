@@ -110,6 +110,7 @@ type Handle struct {
 	datePrefixOverride           config.ValueLoader[string]
 	customDatePrefix             config.ValueLoader[string]
 	maxImportingQueryIterations  config.ValueLoader[int]
+	writeImportIDRefs            config.ValueLoader[bool]
 
 	drainer routerutils.Drainer
 
@@ -149,11 +150,6 @@ type Handle struct {
 
 	asyncDestinationStruct map[string]*asynccommon.AsyncDestinationStruct
 
-	asyncPollTimeStat           stats.Measurement
-	asyncFailedJobsTimeStat     stats.Measurement
-	asyncSuccessfulJobCount     stats.Measurement
-	asyncFailedJobCount         stats.Measurement
-	asyncAbortedJobCount        stats.Measurement
 	asyncGetImportingIterations stats.Measurement
 }
 
