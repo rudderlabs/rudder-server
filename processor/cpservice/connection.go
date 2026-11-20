@@ -80,6 +80,7 @@ func NewConnector(
 			ConnectionToken: connectionToken,
 			InstanceID:      misc.GetInstanceID(),
 			TokenType:       tokenType,
+			IdentityToken:   deployment.IdentityTokenSource(tokenType),
 			Labels:          labels,
 		},
 		RetryInterval: conf.GetDurationVar(0, time.Second, "Processor.cpRouterConnection.retryInterval"),
