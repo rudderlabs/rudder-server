@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-cp-sdk/tokenfile"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
@@ -19,8 +20,11 @@ const (
 // Types of tokens that can be used to authenticate with CP router
 const (
 	workspaceToken = "WORKSPACE_TOKEN"
-	namespace      = "NAMESPACE"
+	namespace      = NamespaceTokenType
 )
+
+// NamespaceTokenType is the connection token type of multi-tenant (namespaced) dataplanes.
+const NamespaceTokenType = "NAMESPACE"
 
 const defaultClusterType = DedicatedType
 
@@ -72,4 +76,19 @@ func GetConnectionToken() (string, string, bool, error) {
 		}
 	}
 	return connectionToken, tokenType, isMultiWorkspace, nil
+}
+
+// IdentityTokenSource returns a function that yields the dataplane identity token on each call, or nil when no token
+// is to be sent: only NAMESPACE handshakes carry one, and only when DATAPLANE_IDENTITY_TOKEN_FILE is set.
+// An unreadable file is not an error: the source returns "" until the file can be read.
+func IdentityTokenSource(tokenType string) func() string {
+	path := config.GetStringVar("", "DATAPLANE_IDENTITY_TOKEN_FILE")
+	if tokenType != NamespaceTokenType || path == "" {
+		return nil
+	}
+	tok := tokenfile.New(path)
+	if err := tok.Load(); err != nil {
+		pkgLogger.Warnn("identity token file not loaded, handshakes carry no token until it is readable", obskit.Error(err))
+	}
+	return tok.Get
 }

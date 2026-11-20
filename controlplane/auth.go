@@ -12,6 +12,8 @@ type AuthInfo struct {
 	InstanceID      string
 	TokenType       string
 	Labels          map[string]string
+	// IdentityToken returns the token to send on each handshake; nil means send none.
+	IdentityToken func() string
 }
 
 type authService struct {
@@ -29,16 +31,18 @@ func (a *authService) GetConnectionToken(_ context.Context, _ *proto.GetConnecti
 			},
 		}, nil
 	}
+	success := &proto.GetConnectionTokenSuccessResponse{
+		ConnectionToken: a.authInfo.ConnectionToken,
+		Service:         a.authInfo.Service,
+		InstanceID:      a.authInfo.InstanceID,
+		TokenType:       a.authInfo.TokenType,
+		Labels:          a.authInfo.Labels,
+	}
+	if a.authInfo.IdentityToken != nil {
+		success.IdentityToken = a.authInfo.IdentityToken()
+	}
 	return &proto.GetConnectionTokenResponse{
-		Response: &proto.GetConnectionTokenResponse_SuccessResponse{
-			SuccessResponse: &proto.GetConnectionTokenSuccessResponse{
-				ConnectionToken: a.authInfo.ConnectionToken,
-				Service:         a.authInfo.Service,
-				InstanceID:      a.authInfo.InstanceID,
-				TokenType:       a.authInfo.TokenType,
-				Labels:          a.authInfo.Labels,
-			},
-		},
+		Response: &proto.GetConnectionTokenResponse_SuccessResponse{SuccessResponse: success},
 	}, nil
 }
 
