@@ -61,9 +61,13 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 }
 
 type parquetWriter struct {
-	writer     *writer.CSVWriter
-	fileWriter misc.BufferedWriter
+	writer         *writer.CSVWriter
+	fileWriter     misc.BufferedWriter
+	maxQueuedBytes int64
+	queuedBytes    int64
 }
+
+const maxParquetQueuedBytes = 64 << 20
 
 func createParquetWriter(outputFilePath string, schema model.TableSchema, destType string, maxParallelWriters int64, disableParquetColumnIndex bool, pageSize int64) (LoadFileWriter, error) {
 	bufWriter, err := misc.CreateBufferedWriter(outputFilePath)
@@ -83,14 +87,42 @@ func createParquetWriter(outputFilePath string, schema model.TableSchema, destTy
 	}
 	w.PageSize = pageSize
 
-	return &parquetWriter{
+	pw := &parquetWriter{
 		writer:     w,
 		fileWriter: bufWriter,
-	}, nil
+	}
+	// The default 8 KiB page path keeps parquet-go's existing flush behavior.
+	if pageSize > defaultParquetPageSize {
+		pw.maxQueuedBytes = maxParquetQueuedBytes
+	}
+	return pw, nil
 }
 
 func (p *parquetWriter) WriteRow(row []any) error {
-	return p.writer.Write(row)
+	if err := p.writer.Write(row); err != nil {
+		return err
+	}
+	if p.maxQueuedBytes == 0 {
+		return nil
+	}
+	p.queuedBytes += rowSize(row)
+	if p.queuedBytes < p.maxQueuedBytes {
+		return nil
+	}
+	p.queuedBytes = 0
+	return p.writer.Flush(false)
+}
+
+// rowSize counts the real bytes of a row; parquet-go estimates every value as four bytes.
+func rowSize(row []any) (n int64) {
+	for _, v := range row {
+		if s, ok := v.(string); ok {
+			n += int64(len(s))
+		} else {
+			n += 8
+		}
+	}
+	return n
 }
 
 func (p *parquetWriter) Close() error {
