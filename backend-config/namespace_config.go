@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-cp-sdk/tokenfile"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -40,6 +41,7 @@ type namespaceConfig struct {
 	stats  stats.Stats
 
 	hostedServiceSecret string
+	identityToken       *tokenfile.Token // optional: a workload identity token, sent by v1 and v2 instead of the secret
 
 	namespace                string
 	configBackendURL         *url.URL
@@ -75,6 +77,16 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	if nc.client == nil {
 		nc.client = &http.Client{
 			Timeout: nc.config.GetDurationVar(30, time.Second, "HttpClient.backendConfig.timeout"),
+		}
+	}
+	if nc.identityToken == nil {
+		if path := nc.config.GetStringVar("", "DATAPLANE_IDENTITY_TOKEN_FILE"); path != "" {
+			nc.identityToken = tokenfile.New(path)
+		}
+	}
+	if nc.identityToken != nil {
+		if err = nc.identityToken.Load(); err != nil {
+			return fmt.Errorf("loading the identity token: %w", err)
 		}
 	}
 
