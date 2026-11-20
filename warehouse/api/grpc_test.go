@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"testing"
@@ -2261,5 +2263,31 @@ func TestGRPC(t *testing.T) {
 				}
 			})
 		}
+	})
+}
+
+func TestNewGRPCServerIdentityToken(t *testing.T) {
+	newGRPC := func(t *testing.T, deploymentType string) *GRPC {
+		t.Helper()
+		t.Setenv("DEPLOYMENT_TYPE", deploymentType)
+		t.Setenv("WORKSPACE_NAMESPACE", "ns")
+		t.Setenv("WORKSPACE_TOKEN", "ws-token")
+		path := filepath.Join(t.TempDir(), "token")
+		require.NoError(t, os.WriteFile(path, []byte("identity-token"), 0o600))
+		t.Setenv("DATAPLANE_IDENTITY_TOKEN_FILE", path)
+		g, err := NewGRPCServer(config.New(), logger.NOP, stats.NOP, nil, nil, nil, nil)
+		require.NoError(t, err)
+		return g
+	}
+
+	t.Run("namespace sends the file token", func(t *testing.T) {
+		g := newGRPC(t, "MULTITENANT")
+		require.NotNil(t, g.connectionManager.AuthInfo.IdentityToken)
+		require.Equal(t, "identity-token", g.connectionManager.AuthInfo.IdentityToken())
+	})
+
+	t.Run("dedicated sends none", func(t *testing.T) {
+		g := newGRPC(t, "DEDICATED")
+		require.Nil(t, g.connectionManager.AuthInfo.IdentityToken)
 	})
 }

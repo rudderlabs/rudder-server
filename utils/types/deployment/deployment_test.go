@@ -2,6 +2,8 @@ package deployment_test
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -156,4 +158,36 @@ func Test_GetConnectionToken(t *testing.T) {
 			require.Equal(t, tt.tokenType, tokenType)
 		})
 	}
+}
+
+func TestIdentityTokenSource(t *testing.T) {
+	const env = "DATAPLANE_IDENTITY_TOKEN_FILE"
+	path := func(t *testing.T, content string) string {
+		p := filepath.Join(t.TempDir(), "token")
+		require.NoError(t, os.WriteFile(p, []byte(content), 0o600))
+		return p
+	}
+
+	t.Run("workspace token type", func(t *testing.T) {
+		t.Setenv(env, path(t, "abc\n"))
+		require.Nil(t, deployment.IdentityTokenSource("WORKSPACE_TOKEN"))
+	})
+	t.Run("env unset", func(t *testing.T) {
+		require.Nil(t, deployment.IdentityTokenSource(deployment.NamespaceTokenType))
+	})
+	t.Run("file present", func(t *testing.T) {
+		t.Setenv(env, path(t, "abc\n"))
+		src := deployment.IdentityTokenSource(deployment.NamespaceTokenType)
+		require.NotNil(t, src)
+		require.Equal(t, "abc", src())
+	})
+	t.Run("file appears later", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), "token")
+		t.Setenv(env, p)
+		src := deployment.IdentityTokenSource(deployment.NamespaceTokenType)
+		require.NotNil(t, src)
+		require.Empty(t, src())
+		require.NoError(t, os.WriteFile(p, []byte("abc\n"), 0o600))
+		require.Equal(t, "abc", src(), "a failed read is retried on the next Get")
+	})
 }

@@ -152,6 +152,7 @@ func NewGRPCServer(
 			ConnectionToken: connectionToken,
 			InstanceID:      g.config.instanceID,
 			TokenType:       tokenType,
+			IdentityToken:   deployment.IdentityTokenSource(tokenType),
 			Labels:          labels,
 		},
 		RetryInterval: 0,
