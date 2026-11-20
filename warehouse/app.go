@@ -155,6 +155,7 @@ func (a *App) Setup(ctx context.Context) error {
 	)
 	a.encodingFactory = encoding.NewFactory(
 		a.conf,
+		encoding.WithLogger(a.logger),
 	)
 
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`,
