@@ -17,8 +17,11 @@ import (
 	"github.com/xitongsys/parquet-go/layout"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/reader"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -32,7 +35,9 @@ func TestParquetWriterPageSize(t *testing.T) {
 	t.Setenv("RSERVER_WAREHOUSE_PARQUET_PAGE_SIZE", "8192")
 	conf := config.New()
 	conf.Set("Warehouse.parquetParallelWriters", 1)
-	factory := encoding.NewFactory(conf)
+	log := mock_logger.NewMockLogger(gomock.NewController(t))
+	log.EXPECT().Child("encoding").Return(log)
+	factory := encoding.NewFactory(conf, encoding.WithLogger(log))
 	// Text-heavy rows force several pages with the default size but fit in one large page.
 	payload := strings.Repeat(`{"event":"production-shaped payload"}`, 120)
 	writeFile := func(t *testing.T) (*reader.ParquetReader, *os.File) {
@@ -108,10 +113,23 @@ func TestParquetWriterPageSize(t *testing.T) {
 		conf.Set("Warehouse.parquetPageSize", largePageSize)
 		checkFile(t, 1)
 	})
-	t.Run("invalid page size falls back", func(t *testing.T) {
-		conf.Set("Warehouse.parquetPageSize", int64(1)<<32)
-		checkFile(t, 16)
-	})
+	for _, tc := range []struct {
+		name string
+		size int64
+	}{
+		{"zero", 0},
+		{"negative", -1},
+		{"one byte", 1},
+		{"over maximum", 1 << 32},
+	} {
+		t.Run("invalid page size "+tc.name+" falls back", func(t *testing.T) {
+			log.EXPECT().Warnn("invalid parquet page size, using default",
+				logger.NewIntField("pageSize", tc.size), logger.NewIntField("defaultPageSize", 8192)).Times(1)
+			conf.Set("Warehouse.parquetPageSize", tc.size)
+			checkFile(t, 16)
+			checkFile(t, 16)
+		})
+	}
 }
 
 func TestReaderLoader(t *testing.T) {

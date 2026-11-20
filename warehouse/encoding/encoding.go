@@ -2,8 +2,8 @@ package encoding
 
 import (
 	"io"
-	"math"
 	"os"
+	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -15,6 +15,8 @@ import (
 
 const (
 	defaultParquetPageSize = 8192
+	minParquetPageSize     = 4 << 10
+	maxParquetPageSize     = 8 << 20
 
 	UUIDTsColumn           = "uuid_ts"
 	LoadedAtColumn         = "loaded_at"
@@ -25,8 +27,9 @@ const (
 )
 
 type Factory struct {
-	logger logger.Logger
-	config struct {
+	logger                 logger.Logger
+	warnedInvalidPageSizes sync.Map
+	config                 struct {
 		maxStagingFileReadBufferCapacityInK int
 		parquetParallelWriters              config.ValueLoader[int64]
 		parquetPageSize                     config.ValueLoader[int64]
@@ -68,8 +71,10 @@ func (m *Factory) NewLoadFileWriter(loadFileType, outputFilePath string, schema 
 	switch loadFileType {
 	case warehouseutils.LoadFileTypeParquet:
 		pageSize := m.config.parquetPageSize.Load()
-		if pageSize < 1 || pageSize > math.MaxInt32 {
-			m.logger.Warnn("invalid parquet page size, using default", logger.NewIntField("pageSize", pageSize), logger.NewIntField("defaultPageSize", defaultParquetPageSize))
+		if pageSize < minParquetPageSize || pageSize > maxParquetPageSize {
+			if _, logged := m.warnedInvalidPageSizes.LoadOrStore(pageSize, struct{}{}); !logged {
+				m.logger.Warnn("invalid parquet page size, using default", logger.NewIntField("pageSize", pageSize), logger.NewIntField("defaultPageSize", defaultParquetPageSize))
+			}
 			pageSize = defaultParquetPageSize
 		}
 		return createParquetWriter(outputFilePath, schema, destType, m.config.parquetParallelWriters.Load(), m.config.disableParquetColumnIndex.Load(), pageSize)
