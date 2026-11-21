@@ -95,15 +95,39 @@ You can also set up RudderStack on your platform of choice with these two easy s
 - [**Kubernetes**](https://www.rudderstack.com/docs/rudderstack-open-source/installing-and-setting-up-rudderstack/kubernetes/)
 - [**Developer machine setup**](https://www.rudderstack.com/docs/rudderstack-open-source/installing-and-setting-up-rudderstack/developer-machine-setup/)
 
-> **Note**: If you are planning to use RudderStack in production, we STRONGLY recommend using our Kubernetes Helm charts. We update our Docker images with bug fixes much more frequently than our GitHub repo.
-
 ### Step 2: Verify the installation
 
 Once you have installed RudderStack, [**send test events**](https://www.rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/sending-test-events/) to verify the setup.
 
+### Step 3: Fully self-hosted (no cloud)
+
+You can run RudderStack completely self-hosted without connecting to RudderStack's hosted control plane (`api.rudderstack.com`), using a local workspace configuration file:
+
+1. Copy the sample workspace configuration:
+   ```bash
+   cp config/workspaceConfig.sample.json config/workspaceConfig.json
+   ```
+2. Start the stack with the self-hosted Docker Compose override:
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.selfhosted.yml up -d
+   ```
+3. Verify server health:
+   ```bash
+   curl http://localhost:8080/health
+   ```
+   The health response will confirm `"backendConfigMode":"JSON"`.
+4. Run the automated smoke test:
+   ```bash
+   ./scripts/selfhosted-smoke.sh
+   ```
+
+> **Note on Diagnostics / Phone-Home**: During startup, the server triggers a non-fatal diagnostic report (`SendFeatures` in `runner/runner.go`) against `CONFIG_BACKEND_URL`. When running disconnected from the cloud, this request safely fails and does not block event processing or routing.
+
+> **Enterprise Features & Licensing**: Enterprise features require an `ENTERPRISE_TOKEN`. RudderStack server is released under the [**Elastic License 2.0**](LICENSE).
+
 ## Architecture
 
-RudderStack is an independent, stand-alone system with a dependency only on the database (PostgreSQL). Its backend is written in **Go** with a rich UI written in **React.js**.
+RudderStack is an independent, stand-alone system with dependencies on PostgreSQL (for the jobs queue and metadata) and the rudder-transformer service (for event and destination transformations). Its backend is written in **Go** with a rich UI written in **React.js**.
 
 A high-level view of RudderStack’s architecture is shown below:
 
