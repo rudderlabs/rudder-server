@@ -4,13 +4,16 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
 
@@ -98,4 +101,130 @@ func TestUpdateRudderSourcesStats_CapturesErrorResponse(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, jobService.failedRecords, 1)
 	require.Equal(t, "captured-text", jobService.failedRecords[0].Error)
+}
+
+type recordedDiagnosticEvent struct {
+	event      string
+	properties map[string]any
+}
+
+type recordingDiagnostics struct {
+	mu     sync.Mutex
+	events []recordedDiagnosticEvent
+}
+
+func (r *recordingDiagnostics) Track(event string, properties map[string]any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, recordedDiagnosticEvent{
+		event:      event,
+		properties: properties,
+	})
+}
+
+func (*recordingDiagnostics) DisableMetrics(bool) {}
+
+func (*recordingDiagnostics) Identify(map[string]any) {}
+
+func (r *recordingDiagnostics) trackedRouterEvents() (count int, successTotal int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, ev := range r.events {
+		if ev.event != diagnostics.RouterEvents {
+			continue
+		}
+		count++
+		if props, ok := ev.properties["WEBHOOK"].(map[string]any); ok {
+			if s, ok := props[diagnostics.RouterSuccess].(int); ok {
+				successTotal += s
+			}
+		}
+	}
+	return count, successTotal
+}
+
+func TestRouterTelemetryMetrics_PreservesDistinctFailures(t *testing.T) {
+	rt := &Handle{
+		telemetry: &Diagnostic{
+			failuresMetric: make(map[string]map[string]int),
+		},
+	}
+
+	rt.recordFailureMetric(diagnostics.RouterFailed, "timeout")
+	rt.recordFailureMetric(diagnostics.RouterFailed, "timeout")
+	rt.recordFailureMetric(diagnostics.RouterFailed, "connection refused")
+	rt.recordFailureMetric(diagnostics.RouterFailed, "timeout")
+
+	require.Equal(t, map[string]int{
+		"timeout":            3,
+		"connection refused": 1,
+	}, rt.telemetry.failuresMetric[diagnostics.RouterFailed])
+}
+
+func TestRouterTelemetryMetrics_ConcurrentCollectAndTrack(t *testing.T) {
+	prevEnable := diagnostics.EnableRouterMetric
+	prevDiag := diagnostics.Diagnostics
+	rec := &recordingDiagnostics{}
+	diagnostics.EnableRouterMetric = true
+	diagnostics.Diagnostics = rec
+	t.Cleanup(func() {
+		diagnostics.EnableRouterMetric = prevEnable
+		diagnostics.Diagnostics = prevDiag
+	})
+
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+
+	rt := &Handle{
+		destType: "WEBHOOK",
+		logger:   logger.NOP,
+		telemetry: &Diagnostic{
+			diagnosisTicker: ticker,
+			failuresMetric:  make(map[string]map[string]int),
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		rt.collectMetrics(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		rt.collectMetrics(ctx)
+	}()
+
+	const writers = 4
+	const perWriter = 50
+	var writersWG sync.WaitGroup
+	for range writers {
+		writersWG.Add(1)
+		go func() {
+			defer writersWG.Done()
+			for range perWriter {
+				rt.trackRequestMetrics(requestMetric{
+					RequestSuccess:       1,
+					RequestCompletedTime: time.Millisecond,
+				})
+				time.Sleep(100 * time.Microsecond)
+			}
+		}()
+	}
+	writersWG.Wait()
+
+	require.Eventually(t, func() bool {
+		rt.telemetry.requestsMetricLock.Lock()
+		pending := len(rt.telemetry.requestsMetric)
+		rt.telemetry.requestsMetricLock.Unlock()
+		return pending == 0
+	}, 2*time.Second, 5*time.Millisecond)
+
+	cancel()
+	wg.Wait()
+
+	ticks, totalSuccess := rec.trackedRouterEvents()
+	require.Positive(t, ticks)
+	require.Equal(t, writers*perWriter, totalSuccess)
 }
