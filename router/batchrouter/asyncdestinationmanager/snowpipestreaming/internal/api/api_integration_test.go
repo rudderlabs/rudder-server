@@ -74,6 +74,7 @@ func TestAPIIntegration(t *testing.T) {
 
 				c := config.New()
 				c.Set("SnowpipeStreaming.enableCompression", tc.enableCompression)
+				c.Set("SnowpipeStreaming.enableBulkStatusPOST", true)
 
 				statsStore, err := memstats.New()
 				require.NoError(t, err)

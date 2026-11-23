@@ -464,6 +464,8 @@ func TestAPI(t *testing.T) {
 	})
 
 	t.Run("Get Bulk Status", func(t *testing.T) {
+		postConf := config.New()
+		postConf.Set("SnowpipeStreaming.enableBulkStatusPOST", true)
 		snowpipeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			require.Equal(t, http.MethodPost, r.Method)
 			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
@@ -485,7 +487,7 @@ func TestAPI(t *testing.T) {
 		defer snowpipeServer.Close()
 
 		ctx := context.Background()
-		manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, snowpipeServer.Client())
+		manager := api.New(postConf, stats.NOP, snowpipeServer.URL, snowpipeServer.Client())
 
 		t.Run("Success", func(t *testing.T) {
 			res, err := manager.GetBulkStatus(ctx, []string{"channel-id", "invalid-channel-id"})
@@ -526,14 +528,14 @@ func TestAPI(t *testing.T) {
 			}))
 			defer server.Close()
 
-			res, err := api.New(config.New(), stats.NOP, server.URL, server.Client()).GetBulkStatus(ctx, channelIDs)
+			res, err := api.New(postConf, stats.NOP, server.URL, server.Client()).GetBulkStatus(ctx, channelIDs)
 			require.NoError(t, err)
 			require.Equal(t, &model.BulkStatusResponse{Success: true, Statuses: map[string]*model.StatusResponse{}, NotFound: []string{}}, res)
 			require.Equal(t, 1, calls)
 		})
 
 		t.Run("Request failure", func(t *testing.T) {
-			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(postConf, stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				err: errors.New("bad client"),
 				response: &http.Response{
 					StatusCode: http.StatusOK,
@@ -545,7 +547,7 @@ func TestAPI(t *testing.T) {
 		})
 
 		t.Run("Request failure (non 200's status code)", func(t *testing.T) {
-			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(postConf, stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				response: &http.Response{
 					StatusCode: http.StatusBadRequest,
 					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{}`))},
@@ -557,7 +559,7 @@ func TestAPI(t *testing.T) {
 		})
 
 		t.Run("Request failure (invalid response)", func(t *testing.T) {
-			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(postConf, stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				response: &http.Response{
 					StatusCode: http.StatusOK,
 					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{abd}`))},
@@ -566,6 +568,42 @@ func TestAPI(t *testing.T) {
 			res, err := manager.GetBulkStatus(ctx, []string{"channel-id"})
 			require.Error(t, err)
 			require.Nil(t, res)
+		})
+
+		t.Run("GET by default and reload to POST", func(t *testing.T) {
+			conf := config.New()
+			methods := make(chan string, 3)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				methods <- r.Method
+				require.Equal(t, "/channels/bulk-status", r.URL.Path)
+				if r.Method == http.MethodGet {
+					require.Equal(t, []string{"channel-id", "invalid-channel-id"}, r.URL.Query()["channelIds"])
+					require.Empty(t, r.ContentLength)
+				} else {
+					require.Equal(t, http.MethodPost, r.Method)
+					require.Empty(t, r.URL.RawQuery)
+					body, err := io.ReadAll(r.Body)
+					require.NoError(t, err)
+					require.JSONEq(t, `{"channelIds":["channel-id","invalid-channel-id"]}`, string(body))
+				}
+				_, err := w.Write([]byte(`{"success":true,"statuses":{},"notFound":["invalid-channel-id"]}`))
+				require.NoError(t, err)
+			}))
+			defer server.Close()
+
+			manager := api.New(conf, stats.NOP, server.URL, server.Client())
+			ids := []string{"channel-id", "invalid-channel-id"}
+			for i, enabled := range []bool{false, true, false} {
+				if i > 0 {
+					conf.Set("SnowpipeStreaming.enableBulkStatusPOST", enabled)
+				}
+				res, err := manager.GetBulkStatus(ctx, ids)
+				require.NoError(t, err)
+				require.Equal(t, []string{"invalid-channel-id"}, res.NotFound)
+			}
+			for _, expected := range []string{http.MethodGet, http.MethodPost, http.MethodGet} {
+				require.Equal(t, expected, <-methods)
+			}
 		})
 	})
 }

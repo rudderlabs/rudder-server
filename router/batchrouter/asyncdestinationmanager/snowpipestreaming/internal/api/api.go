@@ -23,7 +23,8 @@ type (
 		clientURL   string
 		requestDoer requestDoer
 		config      struct {
-			enableCompression config.ValueLoader[bool]
+			enableCompression    config.ValueLoader[bool]
+			enableBulkStatusPOST config.ValueLoader[bool]
 		}
 		stats struct {
 			insertRequestBodySize stats.Histogram
@@ -43,6 +44,7 @@ func New(conf *config.Config, statsFactory stats.Stats, clientURL string, reques
 		requestDoer: requestDoer,
 	}
 	a.config.enableCompression = conf.GetReloadableBoolVar(true, "SnowpipeStreaming.enableCompression")
+	a.config.enableBulkStatusPOST = conf.GetReloadableBoolVar(false, "SnowpipeStreaming.enableBulkStatusPOST")
 	a.stats.insertRequestBodySize = statsFactory.NewTaggedStat("snowpipe_streaming_request_body_size", stats.HistogramType, stats.Tags{
 		"api": "insert",
 	})
@@ -231,19 +233,32 @@ func (a *API) GetStatus(ctx context.Context, channelID string) (*model.StatusRes
 
 // GetBulkStatus retrieves statuses for the given channel IDs.
 func (a *API) GetBulkStatus(ctx context.Context, channelIDs []string) (*model.BulkStatusResponse, error) {
-	reqJSON, err := jsonrs.Marshal(struct {
-		ChannelIDs []string `json:"channelIds"`
-	}{ChannelIDs: channelIDs})
-	if err != nil {
-		return nil, fmt.Errorf("marshalling bulk status request: %w", err)
+	bulkStatusURL := a.clientURL + "/channels/bulk-status"
+	method := http.MethodGet
+	var body io.Reader
+	if a.config.enableBulkStatusPOST.Load() {
+		reqJSON, err := jsonrs.Marshal(struct {
+			ChannelIDs []string `json:"channelIds"`
+		}{ChannelIDs: channelIDs})
+		if err != nil {
+			return nil, fmt.Errorf("marshalling bulk status request: %w", err)
+		}
+		method = http.MethodPost
+		body = bytes.NewReader(reqJSON)
 	}
 
-	bulkStatusURL := a.clientURL + "/channels/bulk-status"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, bulkStatusURL, bytes.NewReader(reqJSON))
+	req, err := http.NewRequestWithContext(ctx, method, bulkStatusURL, body)
 	if err != nil {
 		return nil, fmt.Errorf("creating bulk status request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if method == http.MethodGet {
+		queryParams := req.URL.Query()
+		for _, channelID := range channelIDs {
+			queryParams.Add("channelIds", channelID)
+		}
+		req.URL.RawQuery = queryParams.Encode()
+	}
 
 	resp, reqErr := a.requestDoer.Do(req)
 	if reqErr != nil {

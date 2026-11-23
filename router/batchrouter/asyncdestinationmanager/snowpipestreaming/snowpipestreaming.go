@@ -40,7 +40,10 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const maxBulkStatusBatchSize = 1000
+const (
+	maxBulkStatusBatchSize    = 1000
+	maxGETBulkStatusBatchSize = 25
+)
 
 func New(
 	conf *config.Config,
@@ -76,6 +79,7 @@ func New(
 	m.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SnowpipeStreaming.maxBufferCapacity")
 	m.config.stuckPipelineThreshold = conf.GetReloadableDurationVar(15, time.Minute, "SnowpipeStreaming.stuckPipelineThresholdInMinutes")
 	m.config.bulkStatusBatchSize = conf.GetReloadableIntVar(maxBulkStatusBatchSize, 1, "SnowpipeStreaming.bulkStatusBatchSize")
+	m.config.enableBulkStatusPOST = conf.GetReloadableBoolVar(false, "SnowpipeStreaming.enableBulkStatusPOST")
 	m.config.maxInsertRequestSizeBytes = conf.GetReloadableInt64Var(24*bytesize.MB, bytesize.B, "SnowpipeStreaming.maxInsertRequestSizeBytes")
 
 	tags := stats.Tags{
@@ -868,8 +872,12 @@ func (m *Manager) getBulkStatus(ctx context.Context, channelIDs []string) (map[s
 
 	var notFound []string
 
-	// The client rejects requests containing more than maxBulkStatusBatchSize IDs.
-	channelIDChunks := lo.Chunk(channelIDs, min(m.config.bulkStatusBatchSize.Load(), maxBulkStatusBatchSize))
+	batchSize := min(m.config.bulkStatusBatchSize.Load(), maxBulkStatusBatchSize)
+	if !m.config.enableBulkStatusPOST.Load() {
+		// Use the existing 25-ID GET override until POST is enabled.
+		batchSize = min(batchSize, maxGETBulkStatusBatchSize)
+	}
+	channelIDChunks := lo.Chunk(channelIDs, batchSize)
 	for i := range channelIDChunks {
 		channelIDChunk := channelIDChunks[i]
 		bulkStatusRes, err := m.api.GetBulkStatus(ctx, channelIDChunk)
