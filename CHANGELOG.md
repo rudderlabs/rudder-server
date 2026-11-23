@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.94.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.93.0...v1.94.0-rc.1) (2026-11-23)
+
+
+### Features
+
+* **batchrouter:** store async import IDs once per import ([#7622](https://github.com/rudderlabs/rudder-server/issues/7622)) ([28e2625](https://github.com/rudderlabs/rudder-server/commit/28e262579b27bf001595ef264f7a73d996f1e605))
+* collapse array indices in event schemas ([#7589](https://github.com/rudderlabs/rudder-server/issues/7589)) ([c86a63d](https://github.com/rudderlabs/rudder-server/commit/c86a63d2a0fa9af9c90bb829293e4d73305445ef))
+* **jobsdb:** persisted read cursors for skipping datasets without pending jobs ([#7553](https://github.com/rudderlabs/rudder-server/issues/7553)) ([e8fbcef](https://github.com/rudderlabs/rudder-server/commit/e8fbcefd17446aacbf0671cf4355e36f34aa1437))
+* optionally send a workload identity token on namespace config requests ([#7610](https://github.com/rudderlabs/rudder-server/issues/7610)) ([f8c6f0c](https://github.com/rudderlabs/rudder-server/commit/f8c6f0c9721462b7fe0428cb3ba63a4517465af3))
+* **router:** measure native gzip delivery compression ([#7611](https://github.com/rudderlabs/rudder-server/issues/7611)) ([a2070a0](https://github.com/rudderlabs/rudder-server/commit/a2070a095c0b93c33041aac70ca8bf47ec17fda6))
+* select SOAP or REST for Bing Ads bulk uploads with a config flag ([#7603](https://github.com/rudderlabs/rudder-server/issues/7603)) ([1c2c622](https://github.com/rudderlabs/rudder-server/commit/1c2c622f9c87afaa82f9924dbc8e5c5f5c762d3a))
+* send the dataplane identity token on the cp-router handshake (SEC-462) ([#7625](https://github.com/rudderlabs/rudder-server/issues/7625)) ([435c7cc](https://github.com/rudderlabs/rudder-server/commit/435c7cc7b54faa458a16656bce9755bc3b377540))
+* **warehouse:** make parquet page size reloadable ([#7614](https://github.com/rudderlabs/rudder-server/issues/7614)) ([468911a](https://github.com/rudderlabs/rudder-server/commit/468911ac1e1fa7bee6d21a14ab51ee147b22a2a5))
+
+
+### Bug Fixes
+
+* **batchrouter:** persist bulk upload result correlation ([#7601](https://github.com/rudderlabs/rudder-server/issues/7601)) ([6dff0cd](https://github.com/rudderlabs/rudder-server/commit/6dff0cd24893972a82e84b0771295d52a39a625b))
+* **batchrouter:** shutdown blocks on pending staging file notification to warehouse ([#7593](https://github.com/rudderlabs/rudder-server/issues/7593)) ([e3914d5](https://github.com/rudderlabs/rudder-server/commit/e3914d5e18e5e54107b69a11719c7402d4520826))
+* failed records pages get slower with depth ([#7606](https://github.com/rudderlabs/rudder-server/issues/7606)) ([c6d8801](https://github.com/rudderlabs/rudder-server/commit/c6d880157808ca2e4e81a3e8f224f53be50f32a1))
+* **jobsdb:** n_distinct test failing on postgres 17.12 ([#7604](https://github.com/rudderlabs/rudder-server/issues/7604)) ([a267b6c](https://github.com/rudderlabs/rudder-server/commit/a267b6c965f03fe61a8d35ec7bf9e8e3151f2e1d))
+* **processor:** store snowpipe streaming batch jobs in job ID order per destination ([#7619](https://github.com/rudderlabs/rudder-server/issues/7619)) ([a607ec7](https://github.com/rudderlabs/rudder-server/commit/a607ec7be36d084dc435f3bdc06d1c9b88ea5159))
+* rsources startup blocked by table locks when columns already exist ([#7605](https://github.com/rudderlabs/rudder-server/issues/7605)) ([28dd424](https://github.com/rudderlabs/rudder-server/commit/28dd42431efca674718250e87c864fd8db2b0c72))
+* **warehouse:** scope retries triggers and pending counts ([#7569](https://github.com/rudderlabs/rudder-server/issues/7569)) ([4650408](https://github.com/rudderlabs/rudder-server/commit/46504088bef2f70bf0d650e8202c0f7c54f33f11))
+
+
+### Miscellaneous
+
+* **batchrouter:** extract reusable async destination steps ([#7594](https://github.com/rudderlabs/rudder-server/issues/7594)) ([5e9e003](https://github.com/rudderlabs/rudder-server/commit/5e9e00320a43937b59321b449027daf138ef8602))
+* bump keydb client for discovery through the keydb Service ([#7535](https://github.com/rudderlabs/rudder-server/issues/7535)) ([09ba9be](https://github.com/rudderlabs/rudder-server/commit/09ba9be58dae521ed6c0374be10071793ba596b6))
+* **ci:** pass src hydration test secret only to the package unit step ([#7600](https://github.com/rudderlabs/rudder-server/issues/7600)) ([32d3bbf](https://github.com/rudderlabs/rudder-server/commit/32d3bbf176457713eec0ffa2e7b8e3e52568aa16))
+* **ci:** remove codecov ([#7598](https://github.com/rudderlabs/rudder-server/issues/7598)) ([2ab36a0](https://github.com/rudderlabs/rudder-server/commit/2ab36a02cfc4f2434788451428801c3812cc913e))
+* sync release v1.93.0 to main branch ([#7590](https://github.com/rudderlabs/rudder-server/issues/7590)) ([a1310ff](https://github.com/rudderlabs/rudder-server/commit/a1310ff1c2d63a23e465736880d3c31253d9afa8))
+
 ## [1.93.1](https://github.com/rudderlabs/rudder-server/compare/v1.93.0...v1.93.1) (2026-11-18)
 
 
