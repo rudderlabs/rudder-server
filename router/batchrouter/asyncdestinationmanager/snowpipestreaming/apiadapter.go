@@ -51,7 +51,7 @@ func (a *apiAdapter) CreateChannel(ctx context.Context, req *model.CreateChannel
 		logger.NewStringField("namespace", req.TableConfig.Schema),
 		logger.NewStringField("table", req.TableConfig.Table),
 	)
-	log.Infon("Creating channel")
+	log.Debugn("Creating channel")
 
 	tags := a.defaultTags(createChannelAPI)
 	defer a.recordDuration(tags)()
@@ -61,7 +61,7 @@ func (a *apiAdapter) CreateChannel(ctx context.Context, req *model.CreateChannel
 		tags["success"] = "false"
 		return nil, err
 	}
-	a.logger.Infon("Create channel response",
+	a.logger.Debugn("Create channel response",
 		logger.NewBoolField("success", resp.Success),
 		logger.NewStringField("channelID", resp.ChannelID),
 		logger.NewStringField("channelName", resp.ChannelName),
