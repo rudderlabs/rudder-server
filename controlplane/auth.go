@@ -14,7 +14,8 @@ type AuthInfo struct {
 	InstanceID      string
 	TokenType       string
 	Labels          map[string]string
-	// IdentityToken is read on each handshake; nil means send none.
+	// IdentityToken is sent on each handshake via Get, which re-reads the file once the cached token is 10 s old.
+	// Nil means send none.
 	IdentityToken *tokenfile.Token
 }
 

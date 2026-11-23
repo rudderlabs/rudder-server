@@ -188,6 +188,6 @@ func TestNewConnectorIdentityToken(t *testing.T) {
 	t.Run("fails when the file can't be loaded", func(t *testing.T) {
 		t.Setenv("DATAPLANE_IDENTITY_TOKEN_FILE", filepath.Join(t.TempDir(), "missing"))
 		_, err := NewConnector(config.New(), logger.NOP, stats.NOP, &fakeBackendConfig{}, nil)
-		require.ErrorContains(t, err, "loading the identity token")
+		require.ErrorContains(t, err, "getting identity token: loading the identity token")
 	})
 }

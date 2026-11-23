@@ -69,7 +69,7 @@ func NewConnector(
 	}
 	identityToken, err := deployment.IdentityToken(tokenType)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getting identity token: %w", err)
 	}
 
 	labels := map[string]string{}
