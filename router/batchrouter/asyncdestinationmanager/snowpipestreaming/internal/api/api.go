@@ -231,19 +231,19 @@ func (a *API) GetStatus(ctx context.Context, channelID string) (*model.StatusRes
 
 // GetBulkStatus retrieves statuses for the given channel IDs.
 func (a *API) GetBulkStatus(ctx context.Context, channelIDs []string) (*model.BulkStatusResponse, error) {
-	bulkStatusURL := a.clientURL + "/channels/bulk-status"
+	reqJSON, err := jsonrs.Marshal(struct {
+		ChannelIDs []string `json:"channelIds"`
+	}{ChannelIDs: channelIDs})
+	if err != nil {
+		return nil, fmt.Errorf("marshalling bulk status request: %w", err)
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, bulkStatusURL, nil)
+	bulkStatusURL := a.clientURL + "/channels/bulk-status"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, bulkStatusURL, bytes.NewReader(reqJSON))
 	if err != nil {
 		return nil, fmt.Errorf("creating bulk status request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-
-	queryParams := req.URL.Query()
-	for _, channelID := range channelIDs {
-		queryParams.Add("channelIds", channelID)
-	}
-	req.URL.RawQuery = queryParams.Encode()
 
 	resp, reqErr := a.requestDoer.Do(req)
 	if reqErr != nil {

@@ -148,6 +148,18 @@ func TestAPIIntegration(t *testing.T) {
 					return bulkStatusRes.Statuses[createChannelRes.ChannelID].Offset == "8"
 				}, 30*time.Second, 300*time.Millisecond)
 
+				t.Log("Checking bulk status with 1000 channel IDs")
+				channelIDs := make([]string, 1000)
+				channelIDs[0] = createChannelRes.ChannelID
+				for i := 1; i < len(channelIDs); i++ {
+					channelIDs[i] = fmt.Sprintf("missing-channel-%d", i)
+				}
+				bulkStatusRes, err := snowpipeAPI.GetBulkStatus(ctx, channelIDs)
+				require.NoError(t, err)
+				require.True(t, bulkStatusRes.Success)
+				require.Equal(t, "8", bulkStatusRes.Statuses[createChannelRes.ChannelID].Offset)
+				require.ElementsMatch(t, channelIDs[1:], bulkStatusRes.NotFound)
+
 				t.Log("Checking records in warehouse")
 				records := whth.RetrieveRecordsFromWarehouse(t, testConfig.db, fmt.Sprintf(`SELECT ID, NAME, EMAIL, AGE, ACTIVE, DOB FROM %q.%q ORDER BY ID;`, testConfig.namespace, testConfig.tableName))
 				require.ElementsMatch(t, convertRowsToRecord(rows, []string{"ID", "NAME", "EMAIL", "AGE", "ACTIVE", "DOB"}), records)
