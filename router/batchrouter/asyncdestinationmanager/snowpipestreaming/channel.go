@@ -192,7 +192,7 @@ func (m *Manager) handleTableError(
 	channelReq *model.CreateChannelRequest,
 	eventSchema whutils.ModelTableSchema,
 ) (*model.ChannelResponse, error) {
-	m.logger.Infon("Handling table error",
+	m.logger.Debugn("Handling table error",
 		logger.NewStringField("schema", channelReq.TableConfig.Schema),
 		logger.NewStringField("table", channelReq.TableConfig.Table),
 	)
