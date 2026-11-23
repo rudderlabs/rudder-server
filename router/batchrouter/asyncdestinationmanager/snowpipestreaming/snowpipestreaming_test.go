@@ -3455,6 +3455,70 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}
 	})
 
+	t.Run("getBulkStatus batches and merges responses", func(t *testing.T) {
+		for _, tc := range []struct {
+			name          string
+			channelCount  int
+			reloadSize    int
+			expectedSizes []int
+		}{
+			{name: "150 channels by default", channelCount: 150, expectedSizes: []int{100, 50}},
+			{name: "500 channels by default", channelCount: 500, expectedSizes: slices.Repeat([]int{100}, 5)},
+			{name: "1000 channels by default", channelCount: 1000, expectedSizes: slices.Repeat([]int{100}, 10)},
+			{name: "1001 channels by default", channelCount: 1001, expectedSizes: append(slices.Repeat([]int{100}, 10), 1)},
+			{name: "reloaded smaller batch size", channelCount: 200, reloadSize: 40, expectedSizes: slices.Repeat([]int{40}, 5)},
+			{name: "reloaded larger batch size", channelCount: 600, reloadSize: 250, expectedSizes: []int{250, 250, 100}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				conf := config.New()
+				sm := New(conf, logger.NOP, stats.NOP, destination)
+				if tc.reloadSize > 0 {
+					conf.Set("SnowpipeStreaming.bulkStatusBatchSize", tc.reloadSize)
+				}
+
+				channelIDs := make([]string, tc.channelCount)
+				expectedStatuses := make(map[string]*model.StatusResponse)
+				var expectedNotFound []string
+				for i := range channelIDs {
+					channelIDs[i] = fmt.Sprintf("channel-%04d", i)
+					if i%2 == 0 {
+						expectedStatuses[channelIDs[i]] = &model.StatusResponse{Success: true, Offset: "5", Valid: true}
+					} else {
+						expectedNotFound = append(expectedNotFound, channelIDs[i])
+					}
+				}
+
+				var callSizes []int
+				responses := make(map[string]func() (*model.BulkStatusResponse, error))
+				start := 0
+				for _, size := range tc.expectedSizes {
+					chunk := channelIDs[start : start+size]
+					start += size
+					statuses := make(map[string]*model.StatusResponse)
+					var notFound []string
+					for _, id := range chunk {
+						if status, ok := expectedStatuses[id]; ok {
+							statuses[id] = status
+						} else {
+							notFound = append(notFound, id)
+						}
+					}
+					responses[strings.Join(chunk, ",")] = func() (*model.BulkStatusResponse, error) {
+						callSizes = append(callSizes, len(chunk))
+						return &model.BulkStatusResponse{Success: true, Statuses: statuses, NotFound: notFound}, nil
+					}
+				}
+				sm.api = &mockAPI{getBulkStatusOutputMap: responses}
+
+				statuses, notFound, err := sm.getBulkStatus(context.Background(), channelIDs)
+				require.NoError(t, err)
+				require.Equal(t, tc.expectedSizes, callSizes)
+				require.Equal(t, expectedStatuses, statuses)
+				require.Equal(t, expectedNotFound, notFound)
+			})
+		}
+	})
+
 	t.Run("provideInProgressImportInfos", func(t *testing.T) {
 		tests := []struct {
 			name                       string
