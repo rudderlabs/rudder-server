@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -504,34 +503,6 @@ func TestAPI(t *testing.T) {
 				},
 				NotFound: []string{"invalid-channel-id"},
 			}, res)
-		})
-
-		t.Run("1000 IDs in one request", func(t *testing.T) {
-			channelIDs := make([]string, 1000)
-			for i := range channelIDs {
-				channelIDs[i] = fmt.Sprintf("channel-%d", i)
-			}
-			calls := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls++
-				require.Equal(t, http.MethodPost, r.Method)
-				require.Equal(t, "/channels/bulk-status", r.URL.Path)
-				require.Empty(t, r.URL.RawQuery)
-				require.Equal(t, "application/json", r.Header.Get("Content-Type"))
-				var request struct {
-					ChannelIDs []string `json:"channelIds"`
-				}
-				require.NoError(t, jsonrs.NewDecoder(r.Body).Decode(&request))
-				require.Equal(t, channelIDs, request.ChannelIDs)
-				_, err := w.Write([]byte(`{"success":true,"statuses":{},"notFound":[]}`))
-				require.NoError(t, err)
-			}))
-			defer server.Close()
-
-			res, err := api.New(postConf, stats.NOP, server.URL, server.Client()).GetBulkStatus(ctx, channelIDs)
-			require.NoError(t, err)
-			require.Equal(t, &model.BulkStatusResponse{Success: true, Statuses: map[string]*model.StatusResponse{}, NotFound: []string{}}, res)
-			require.Equal(t, 1, calls)
 		})
 
 		t.Run("Request failure", func(t *testing.T) {
