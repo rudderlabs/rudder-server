@@ -35,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -46,7 +47,8 @@ import (
 func createTestWorker(destType string, transformProxy bool, stat stats.Stats) *worker {
 	return &worker{
 		rt: &Handle{
-			destType: destType,
+			destType:  destType,
+			telemetry: &Diagnostic{},
 			// the noop service declares nothing, so Router.<DEST>.transformerProxy decides
 			transformerFeaturesService: transformerFeaturesService.NewNoOpService(),
 			reloadableConfig: &reloadableConfig{
@@ -63,6 +65,10 @@ func createTestWorker(destType string, transformProxy bool, stat stats.Stats) *w
 }
 
 func TestDeliveryCompressionMetrics(t *testing.T) {
+	previouslyEnabled := diagnostics.EnableRouterMetric
+	diagnostics.EnableRouterMetric = true
+	t.Cleanup(func() { diagnostics.EnableRouterMetric = previouslyEnabled })
+
 	const (
 		destType      = "TEST_DEST"
 		workspaceID   = "workspace-1"
