@@ -5,6 +5,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
@@ -14,9 +15,9 @@ import (
 )
 
 const (
-	defaultParquetPageSize = 8192
-	minParquetPageSize     = 4 << 10
-	maxParquetPageSize     = 8 << 20
+	defaultParquetPageSize = 8 * bytesize.KB
+	minParquetPageSize     = 4 * bytesize.KB
+	maxParquetPageSize     = 8 * bytesize.MB
 
 	UUIDTsColumn           = "uuid_ts"
 	LoadedAtColumn         = "loaded_at"

@@ -9,6 +9,8 @@ import (
 	"github.com/samber/lo"
 	"github.com/xitongsys/parquet-go/writer"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -67,7 +69,7 @@ type parquetWriter struct {
 	queuedBytes    int64
 }
 
-const maxParquetQueuedBytes = 64 << 20
+const maxParquetQueuedBytes = 64 * bytesize.MB
 
 func createParquetWriter(outputFilePath string, schema model.TableSchema, destType string, maxParallelWriters int64, disableParquetColumnIndex bool, pageSize int64) (LoadFileWriter, error) {
 	bufWriter, err := misc.CreateBufferedWriter(outputFilePath)
