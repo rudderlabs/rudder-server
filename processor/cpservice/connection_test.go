@@ -172,27 +172,22 @@ func wsConfWithServiceFlag(url string, active bool) map[string]backendconfig.Con
 }
 
 func TestNewConnectorIdentityToken(t *testing.T) {
-	newConn := func(t *testing.T, deploymentType string) *Connector {
-		t.Helper()
-		t.Setenv("DEPLOYMENT_TYPE", deploymentType)
-		t.Setenv("WORKSPACE_NAMESPACE", "ns")
-		t.Setenv("WORKSPACE_TOKEN", "ws-token")
+	t.Setenv("DEPLOYMENT_TYPE", "MULTITENANT")
+	t.Setenv("WORKSPACE_NAMESPACE", "ns")
+	t.Setenv("WORKSPACE_TOKEN", "ws-token")
+
+	t.Run("sends the file token", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "token")
 		require.NoError(t, os.WriteFile(path, []byte("identity-token"), 0o600))
 		t.Setenv("DATAPLANE_IDENTITY_TOKEN_FILE", path)
 		c, err := NewConnector(config.New(), logger.NOP, stats.NOP, &fakeBackendConfig{}, nil)
 		require.NoError(t, err)
-		return c
-	}
-
-	t.Run("namespace sends the file token", func(t *testing.T) {
-		c := newConn(t, "MULTITENANT")
-		require.NotNil(t, c.cm.AuthInfo.IdentityToken)
-		require.Equal(t, "identity-token", c.cm.AuthInfo.IdentityToken())
+		require.Equal(t, "identity-token", c.cm.AuthInfo.IdentityToken.Get())
 	})
 
-	t.Run("dedicated sends none", func(t *testing.T) {
-		c := newConn(t, "DEDICATED")
-		require.Nil(t, c.cm.AuthInfo.IdentityToken)
+	t.Run("fails when the file can't be loaded", func(t *testing.T) {
+		t.Setenv("DATAPLANE_IDENTITY_TOKEN_FILE", filepath.Join(t.TempDir(), "missing"))
+		_, err := NewConnector(config.New(), logger.NOP, stats.NOP, &fakeBackendConfig{}, nil)
+		require.ErrorContains(t, err, "loading the identity token")
 	})
 }

@@ -20,11 +20,8 @@ const (
 // Types of tokens that can be used to authenticate with CP router
 const (
 	workspaceToken = "WORKSPACE_TOKEN"
-	namespace      = NamespaceTokenType
+	namespace      = "NAMESPACE"
 )
-
-// NamespaceTokenType is the connection token type of multi-tenant (namespaced) dataplanes.
-const NamespaceTokenType = "NAMESPACE"
 
 const defaultClusterType = DedicatedType
 
@@ -78,17 +75,17 @@ func GetConnectionToken() (string, string, bool, error) {
 	return connectionToken, tokenType, isMultiWorkspace, nil
 }
 
-// IdentityTokenSource returns a function that yields the dataplane identity token on each call, or nil when no token
-// is to be sent: only NAMESPACE handshakes carry one, and only when DATAPLANE_IDENTITY_TOKEN_FILE is set.
-// An unreadable file is not an error: the source returns "" until the file can be read.
-func IdentityTokenSource(tokenType string) func() string {
+// IdentityToken returns the dataplane identity token to send on cp-router handshakes, or nil when none is sent:
+// only NAMESPACE handshakes carry one, and only when DATAPLANE_IDENTITY_TOKEN_FILE is set.
+// It fails when the file can't be loaded, as backend config does for the same file.
+func IdentityToken(tokenType string) (*tokenfile.Token, error) {
 	path := config.GetStringVar("", "DATAPLANE_IDENTITY_TOKEN_FILE")
-	if tokenType != NamespaceTokenType || path == "" {
-		return nil
+	if tokenType != namespace || path == "" {
+		return nil, nil // nolint:nilnil // no token to send is not an error
 	}
-	tok := tokenfile.New(path)
-	if err := tok.Load(); err != nil {
-		pkgLogger.Warnn("identity token file not loaded, handshakes carry no token until it is readable", obskit.Error(err))
+	token := tokenfile.New(path)
+	if err := token.Load(); err != nil {
+		return nil, fmt.Errorf("loading the identity token: %w", err)
 	}
-	return tok.Get
+	return token, nil
 }

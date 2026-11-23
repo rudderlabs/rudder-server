@@ -67,6 +67,10 @@ func NewConnector(
 	if err != nil {
 		return nil, fmt.Errorf("getting connection token: %w", err)
 	}
+	identityToken, err := deployment.IdentityToken(tokenType)
+	if err != nil {
+		return nil, err
+	}
 
 	labels := map[string]string{}
 	if region := conf.GetStringVar("", "region"); region != "" {
@@ -80,7 +84,7 @@ func NewConnector(
 			ConnectionToken: connectionToken,
 			InstanceID:      misc.GetInstanceID(),
 			TokenType:       tokenType,
-			IdentityToken:   deployment.IdentityTokenSource(tokenType),
+			IdentityToken:   identityToken,
 			Labels:          labels,
 		},
 		RetryInterval: conf.GetDurationVar(0, time.Second, "Processor.cpRouterConnection.retryInterval"),

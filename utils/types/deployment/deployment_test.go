@@ -160,7 +160,7 @@ func Test_GetConnectionToken(t *testing.T) {
 	}
 }
 
-func TestIdentityTokenSource(t *testing.T) {
+func TestIdentityToken(t *testing.T) {
 	const env = "DATAPLANE_IDENTITY_TOKEN_FILE"
 	path := func(t *testing.T, content string) string {
 		p := filepath.Join(t.TempDir(), "token")
@@ -170,24 +170,30 @@ func TestIdentityTokenSource(t *testing.T) {
 
 	t.Run("workspace token type", func(t *testing.T) {
 		t.Setenv(env, path(t, "abc\n"))
-		require.Nil(t, deployment.IdentityTokenSource("WORKSPACE_TOKEN"))
+		tok, err := deployment.IdentityToken("WORKSPACE_TOKEN")
+		require.NoError(t, err)
+		require.Nil(t, tok)
 	})
 	t.Run("env unset", func(t *testing.T) {
-		require.Nil(t, deployment.IdentityTokenSource(deployment.NamespaceTokenType))
+		tok, err := deployment.IdentityToken("NAMESPACE")
+		require.NoError(t, err)
+		require.Nil(t, tok)
 	})
 	t.Run("file present", func(t *testing.T) {
 		t.Setenv(env, path(t, "abc\n"))
-		src := deployment.IdentityTokenSource(deployment.NamespaceTokenType)
-		require.NotNil(t, src)
-		require.Equal(t, "abc", src())
+		tok, err := deployment.IdentityToken("NAMESPACE")
+		require.NoError(t, err)
+		require.Equal(t, "abc", tok.Get())
 	})
-	t.Run("file appears later", func(t *testing.T) {
-		p := filepath.Join(t.TempDir(), "token")
-		t.Setenv(env, p)
-		src := deployment.IdentityTokenSource(deployment.NamespaceTokenType)
-		require.NotNil(t, src)
-		require.Empty(t, src())
-		require.NoError(t, os.WriteFile(p, []byte("abc\n"), 0o600))
-		require.Equal(t, "abc", src(), "a failed read is retried on the next Get")
+	t.Run("missing file fails", func(t *testing.T) {
+		t.Setenv(env, filepath.Join(t.TempDir(), "missing"))
+		tok, err := deployment.IdentityToken("NAMESPACE")
+		require.ErrorContains(t, err, "loading the identity token")
+		require.Nil(t, tok)
+	})
+	t.Run("empty file fails", func(t *testing.T) {
+		t.Setenv(env, path(t, " \n"))
+		_, err := deployment.IdentityToken("NAMESPACE")
+		require.ErrorContains(t, err, "loading the identity token")
 	})
 }
