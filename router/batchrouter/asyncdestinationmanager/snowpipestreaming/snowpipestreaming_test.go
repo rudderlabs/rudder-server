@@ -3406,7 +3406,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			{name: "1000 channels by default", channelCount: 1000, expectedSizes: slices.Repeat([]int{100}, 10)},
 			{name: "1001 channels by default", channelCount: 1001, expectedSizes: append(slices.Repeat([]int{100}, 10), 1)},
 			{name: "reloaded smaller batch size", channelCount: 200, reloadSize: 40, expectedSizes: slices.Repeat([]int{40}, 5)},
-			{name: "reloaded size above caller limit", channelCount: 1200, reloadSize: 1500, expectedSizes: slices.Repeat([]int{100}, 12)},
+			{name: "reloaded larger batch size", channelCount: 600, reloadSize: 250, expectedSizes: []int{250, 250, 100}},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				conf := config.New()
