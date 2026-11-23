@@ -3403,11 +3403,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 			expectedSizes []int
 		}{
 			{name: "GET by default", channelCount: 60, expectedSizes: []int{25, 25, 10}},
-			{name: "500 channels with POST", channelCount: 500, enablePOST: true, expectedSizes: []int{500}},
-			{name: "1000 channels with POST", channelCount: 1000, enablePOST: true, expectedSizes: []int{1000}},
-			{name: "1001 channels with POST", channelCount: 1001, enablePOST: true, expectedSizes: []int{1000, 1}},
-			{name: "reloaded smaller batch size", channelCount: 1200, reloadSize: 250, enablePOST: true, expectedSizes: []int{250, 250, 250, 250, 200}},
-			{name: "reloaded size above service limit", channelCount: 1200, reloadSize: 1500, enablePOST: true, expectedSizes: []int{1000, 200}},
+			{name: "500 channels with POST", channelCount: 500, enablePOST: true, expectedSizes: slices.Repeat([]int{100}, 5)},
+			{name: "1000 channels with POST", channelCount: 1000, enablePOST: true, expectedSizes: slices.Repeat([]int{100}, 10)},
+			{name: "1001 channels with POST", channelCount: 1001, enablePOST: true, expectedSizes: append(slices.Repeat([]int{100}, 10), 1)},
+			{name: "reloaded smaller batch size", channelCount: 200, reloadSize: 40, enablePOST: true, expectedSizes: slices.Repeat([]int{40}, 5)},
+			{name: "reloaded size above caller limit", channelCount: 1200, reloadSize: 1500, enablePOST: true, expectedSizes: slices.Repeat([]int{100}, 12)},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				conf := config.New()

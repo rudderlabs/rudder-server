@@ -41,7 +41,7 @@ import (
 )
 
 const (
-	maxBulkStatusBatchSize    = 1000
+	maxBulkStatusBatchSize    = 100
 	maxGETBulkStatusBatchSize = 25
 )
 
