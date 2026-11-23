@@ -13,11 +13,54 @@ import (
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+func TestParquetWriterQueuedBytesCap(t *testing.T) {
+	newWriter := func(t *testing.T, schema model.TableSchema, pageSize int64) *parquetWriter {
+		t.Helper()
+		writer, err := createParquetWriter(t.TempDir()+"/events.parquet", schema, warehouseutils.GCSDatalake, 1, false, pageSize)
+		require.NoError(t, err)
+		pw := writer.(*parquetWriter)
+		t.Cleanup(func() { require.NoError(t, pw.Close()) })
+		return pw
+	}
+
+	defaultWriter := newWriter(t, model.TableSchema{"event": "string"}, defaultParquetPageSize)
+	require.Zero(t, defaultWriter.maxQueuedBytes)
+
+	t.Run("flushes after payload cap", func(t *testing.T) {
+		pw := newWriter(t, model.TableSchema{"event": "string"}, bytesize.MB)
+		require.Equal(t, maxParquetQueuedBytes, pw.maxQueuedBytes)
+		pw.maxQueuedBytes = bytesize.KB
+		row := []any{strings.Repeat("x", 200)}
+		for range 4 {
+			require.NoError(t, pw.WriteRow(row))
+		}
+		require.Len(t, pw.writer.Objs, 4)
+		require.NoError(t, pw.WriteRow(row))
+		require.Empty(t, pw.writer.Objs)
+	})
+
+	t.Run("empty strings count toward cap", func(t *testing.T) {
+		schema := make(model.TableSchema, 64)
+		row := make([]any, 64)
+		for i := range row {
+			schema[fmt.Sprintf("column_%02d", i)] = "string"
+			row[i] = ""
+		}
+		pw := newWriter(t, schema, bytesize.MB)
+		pw.maxQueuedBytes = bytesize.KB
+		for range 10 {
+			require.NoError(t, pw.WriteRow(row))
+			require.Empty(t, pw.writer.Objs)
+		}
+	})
+}
 
 func TestParquetWriterLoadFileMemory(t *testing.T) {
 	const pageSizeEnv = "RUDDER_PARQUET_MEMORY_TEST_PAGE_SIZE"
