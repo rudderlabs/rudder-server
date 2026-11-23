@@ -2,6 +2,8 @@ package deployment_test
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -156,4 +158,42 @@ func Test_GetConnectionToken(t *testing.T) {
 			require.Equal(t, tt.tokenType, tokenType)
 		})
 	}
+}
+
+func TestIdentityToken(t *testing.T) {
+	const env = "DATAPLANE_IDENTITY_TOKEN_FILE"
+	path := func(t *testing.T, content string) string {
+		p := filepath.Join(t.TempDir(), "token")
+		require.NoError(t, os.WriteFile(p, []byte(content), 0o600))
+		return p
+	}
+
+	t.Run("workspace token type", func(t *testing.T) {
+		t.Setenv(env, path(t, "abc\n"))
+		tok, err := deployment.IdentityToken("WORKSPACE_TOKEN")
+		require.NoError(t, err)
+		require.Nil(t, tok)
+	})
+	t.Run("env unset", func(t *testing.T) {
+		tok, err := deployment.IdentityToken("NAMESPACE")
+		require.NoError(t, err)
+		require.Nil(t, tok)
+	})
+	t.Run("file present", func(t *testing.T) {
+		t.Setenv(env, path(t, "abc\n"))
+		tok, err := deployment.IdentityToken("NAMESPACE")
+		require.NoError(t, err)
+		require.Equal(t, "abc", tok.Get())
+	})
+	t.Run("missing file fails", func(t *testing.T) {
+		t.Setenv(env, filepath.Join(t.TempDir(), "missing"))
+		tok, err := deployment.IdentityToken("NAMESPACE")
+		require.ErrorContains(t, err, "loading the identity token")
+		require.Nil(t, tok)
+	})
+	t.Run("empty file fails", func(t *testing.T) {
+		t.Setenv(env, path(t, " \n"))
+		_, err := deployment.IdentityToken("NAMESPACE")
+		require.ErrorContains(t, err, "loading the identity token")
+	})
 }

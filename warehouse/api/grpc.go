@@ -134,6 +134,10 @@ func NewGRPCServer(
 	if err != nil {
 		return nil, fmt.Errorf("connection token: %w", err)
 	}
+	identityToken, err := deployment.IdentityToken(tokenType)
+	if err != nil {
+		return nil, fmt.Errorf("identity token: %w", err)
+	}
 
 	g.config.defaultLatencyAggregationType, err = model.GetLatencyAggregationType(conf.GetStringVar("p90", "Warehouse.grpc.defaultLatencyAggregationType"))
 	if err != nil {
@@ -152,6 +156,7 @@ func NewGRPCServer(
 			ConnectionToken: connectionToken,
 			InstanceID:      g.config.instanceID,
 			TokenType:       tokenType,
+			IdentityToken:   identityToken,
 			Labels:          labels,
 		},
 		RetryInterval: 0,

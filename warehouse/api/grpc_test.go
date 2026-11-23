@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"testing"
@@ -2261,5 +2263,26 @@ func TestGRPC(t *testing.T) {
 				}
 			})
 		}
+	})
+}
+
+func TestNewGRPCServerIdentityToken(t *testing.T) {
+	t.Setenv("DEPLOYMENT_TYPE", "MULTITENANT")
+	t.Setenv("WORKSPACE_NAMESPACE", "ns")
+	t.Setenv("WORKSPACE_TOKEN", "ws-token")
+
+	t.Run("sends the file token", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "token")
+		require.NoError(t, os.WriteFile(path, []byte("identity-token"), 0o600))
+		t.Setenv("DATAPLANE_IDENTITY_TOKEN_FILE", path)
+		g, err := NewGRPCServer(config.New(), logger.NOP, stats.NOP, nil, nil, nil, nil)
+		require.NoError(t, err)
+		require.Equal(t, "identity-token", g.connectionManager.AuthInfo.IdentityToken.Get())
+	})
+
+	t.Run("fails when the file can't be loaded", func(t *testing.T) {
+		t.Setenv("DATAPLANE_IDENTITY_TOKEN_FILE", filepath.Join(t.TempDir(), "missing"))
+		_, err := NewGRPCServer(config.New(), logger.NOP, stats.NOP, nil, nil, nil, nil)
+		require.ErrorContains(t, err, "identity token: loading the identity token")
 	})
 }
