@@ -897,6 +897,55 @@ func TestGateway(t *testing.T) {
 				)
 			}
 		})
+
+		t.Run("should not carry over an event's request_ip to subsequent events in a batch", func(t *testing.T) {
+			f := newValidRequestsFixture(t)
+			stored := make(chan []*jobsdb.JobT, 1)
+			f.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, fn func(jobsdb.StoreSafeTx) error) {
+				_ = fn(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+			f.mockJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+				func(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) error {
+					stored <- jobs
+					return nil
+				},
+			).Times(1)
+
+			body := `{"batch":[` +
+				`{"type":"track","event":"Purchase Completed","userId":"alice","request_ip":"198.51.100.20"},` +
+				`{"type":"track","event":"Account Created","userId":"bob"}` +
+				`]}`
+			req := authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(body))
+			req.Method = http.MethodPost
+			req.URL.Path = "/v1/batch"
+			req.Header.Set("X-Forwarded-For", "203.0.113.10")
+
+			expectHandlerResponse(t, f.gateway.webBatchHandler(), req, http.StatusOK, "ok", "batch")
+
+			jobs := <-stored
+			require.Len(t, jobs, 2)
+
+			type storedPayload struct {
+				RequestIP string `json:"requestIP"`
+				Batch     []struct {
+					UserID    string `json:"userId"`
+					RequestIP string `json:"request_ip"`
+				} `json:"batch"`
+			}
+			var first, second storedPayload
+			require.NoError(t, jsonrs.Unmarshal(jobs[0].EventPayload, &first))
+			require.NoError(t, jsonrs.Unmarshal(jobs[1].EventPayload, &second))
+
+			require.Len(t, first.Batch, 1)
+			require.Equal(t, "alice", first.Batch[0].UserID)
+			require.Equal(t, "198.51.100.20", first.Batch[0].RequestIP)
+			require.Equal(t, "198.51.100.20", first.RequestIP)
+
+			require.Len(t, second.Batch, 1)
+			require.Equal(t, "bob", second.Batch[0].UserID)
+			require.Equal(t, "203.0.113.10", second.Batch[0].RequestIP)
+			require.Equal(t, "203.0.113.10", second.RequestIP)
+		})
 	})
 
 	t.Run("Bots", func(t *testing.T) {
@@ -1642,6 +1691,44 @@ func TestGateway(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, job.Batch[0].ReceivedAt)
 			require.Contains(t, job.Batch[0].RequestIP, "dummyIP")
+		})
+
+		t.Run("scopes request_ip per event in a batch", func(t *testing.T) {
+			f := newJobDataFromRequestFixture(t)
+			req := &webRequestT{
+				reqType:      "batch",
+				authContext:  rCtxEnabled,
+				done:         make(chan<- string),
+				userIDHeader: userIDHeader,
+				ipAddr:       "203.0.113.10",
+				requestPayload: []byte(`{"batch": [` +
+					`{"type": "track", "userId": "u1", "request_ip": 123},` +
+					`{"type": "track", "userId": "u2", "request_ip": "198.51.100.20"},` +
+					`{"type": "track", "userId": "u3"}` +
+					`]}`),
+			}
+			jobForm, err := f.gateway.getJobDataFromRequest(req)
+			require.NoError(t, err)
+			require.Len(t, jobForm.jobs, 3)
+
+			type jobPayload struct {
+				RequestIP string `json:"requestIP"`
+				Batch     []struct {
+					RequestIP any `json:"request_ip"`
+				} `json:"batch"`
+			}
+
+			var first, second, third jobPayload
+			require.NoError(t, jsonrs.Unmarshal(jobForm.jobs[0].EventPayload, &first))
+			require.NoError(t, jsonrs.Unmarshal(jobForm.jobs[1].EventPayload, &second))
+			require.NoError(t, jsonrs.Unmarshal(jobForm.jobs[2].EventPayload, &third))
+
+			require.Equal(t, "203.0.113.10", first.RequestIP)
+			require.Equal(t, float64(123), first.Batch[0].RequestIP)
+			require.Equal(t, "198.51.100.20", second.RequestIP)
+			require.Equal(t, "198.51.100.20", second.Batch[0].RequestIP)
+			require.Equal(t, "203.0.113.10", third.RequestIP)
+			require.Equal(t, "203.0.113.10", third.Batch[0].RequestIP)
 		})
 
 		t.Run("allows extract events even if userID and anonID are not present in the request payload", func(t *testing.T) {
