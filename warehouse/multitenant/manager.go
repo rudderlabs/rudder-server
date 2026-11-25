@@ -3,79 +3,121 @@ package multitenant
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
+
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
+const degradedWorkspaceIDsKey = "Warehouse.degradedWorkspaceIDs"
+
 type Manager struct {
 	backendConfig        backendconfig.BackendConfig
-	degradedWorkspaceIDs []string
+	degradedWorkspaceIDs *config.Reloadable[[]string]
 
 	sourceIDToWorkspaceID map[string]string
-	excludeWorkspaceIDMap map[string]struct{}
+	// fullConfig is the unfiltered snapshot, written only by Run. configVersion changes
+	// with every snapshot and degraded-list reload, so subscribers can skip unchanged sends.
+	fullConfig    map[string]backendconfig.ConfigT
+	configVersion uint64
+	configMu      sync.RWMutex
+
+	subscribersMu sync.Mutex
+	subscribers   map[chan struct{}]struct{}
 
 	ready     chan struct{}
-	sourceMu  sync.Mutex
 	readyOnce sync.Once
-	initOnce  sync.Once
 }
 
 func New(conf *config.Config, bcConfig backendconfig.BackendConfig) *Manager {
-	m := &Manager{}
-	m.backendConfig = bcConfig
-	m.degradedWorkspaceIDs = conf.GetStringSliceVar(nil, "Warehouse.degradedWorkspaceIDs")
-
+	m := &Manager{
+		backendConfig:         bcConfig,
+		degradedWorkspaceIDs:  conf.GetReloadableStringSliceVar(nil, degradedWorkspaceIDsKey),
+		sourceIDToWorkspaceID: make(map[string]string),
+		subscribers:           make(map[chan struct{}]struct{}),
+		ready:                 make(chan struct{}),
+	}
+	conf.OnReloadableConfigChange(func(key string, _, _ any) {
+		if key == degradedWorkspaceIDsKey {
+			m.configMu.Lock()
+			m.configVersion++
+			m.configMu.Unlock()
+			m.notifySubscribers()
+		}
+	})
 	return m
 }
 
-func (m *Manager) init() {
-	m.initOnce.Do(func() {
-		m.sourceIDToWorkspaceID = make(map[string]string)
-		m.excludeWorkspaceIDMap = make(map[string]struct{})
-
-		for _, workspaceID := range m.degradedWorkspaceIDs {
-			m.excludeWorkspaceIDMap[workspaceID] = struct{}{}
+func (m *Manager) notifySubscribers() {
+	m.subscribersMu.Lock()
+	defer m.subscribersMu.Unlock()
+	for ch := range m.subscribers {
+		select {
+		case ch <- struct{}{}:
+		default:
 		}
-		m.ready = make(chan struct{})
-	})
+	}
 }
 
 // Run is a blocking function that executes manager background logic.
 func (m *Manager) Run(ctx context.Context) {
-	m.init()
-
 	chIn := m.backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	for data := range chIn {
-		m.sourceMu.Lock()
+		m.configMu.Lock()
 		wConfig := data.Data.(map[string]backendconfig.ConfigT)
+		m.fullConfig = wConfig
+		m.configVersion++
 		for workspaceID := range wConfig {
 			for _, source := range wConfig[workspaceID].Sources {
 				m.sourceIDToWorkspaceID[source.ID] = workspaceID
 			}
 		}
-		m.sourceMu.Unlock()
+		m.configMu.Unlock()
 		m.readyOnce.Do(func() {
 			close(m.ready)
 		})
+		m.notifySubscribers()
 	}
 }
 
 // DegradedWorkspace returns true if the workspaceID is degraded.
 func (m *Manager) DegradedWorkspace(workspaceID string) bool {
-	m.init()
-
-	_, ok := m.excludeWorkspaceIDMap[workspaceID]
-	return ok
+	return slices.Contains(m.degradedWorkspaceIDs.Load(), workspaceID)
 }
 
 // DegradedWorkspaces returns a list of degraded workspaceIDs.
 func (m *Manager) DegradedWorkspaces() []string {
-	m.init()
+	return m.degradedWorkspaceIDs.Load()
+}
 
-	return m.degradedWorkspaceIDs
+// ConnectionRemoved reports whether the full snapshot lacks the connection for destType.
+// A missing snapshot is not evidence that a connection was removed.
+func (m *Manager) ConnectionRemoved(workspaceID, sourceID, destinationID, destType string) bool {
+	m.configMu.RLock()
+	defer m.configMu.RUnlock()
+
+	if m.fullConfig == nil {
+		return false
+	}
+	return !connectionInWorkspace(m.fullConfig[workspaceID], sourceID, destinationID, destType)
+}
+
+func connectionInWorkspace(config backendconfig.ConfigT, sourceID, destinationID, destType string) bool {
+	for _, source := range config.Sources {
+		if source.ID != sourceID {
+			continue
+		}
+		for _, destination := range source.Destinations {
+			if destination.ID == destinationID && destination.DestinationDefinition.Name == destType {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // SourceToWorkspace returns the workspaceID for a given sourceID, even if workspaceID is degraded.
@@ -83,16 +125,14 @@ func (m *Manager) DegradedWorkspaces() []string {
 //
 //	NOTE: This function blocks until the backend config is loaded.
 func (m *Manager) SourceToWorkspace(ctx context.Context, sourceID string) (string, error) {
-	m.init()
-
 	select {
 	case <-m.ready:
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
 
-	m.sourceMu.Lock()
-	defer m.sourceMu.Unlock()
+	m.configMu.RLock()
+	defer m.configMu.RUnlock()
 
 	workspaceID, ok := m.sourceIDToWorkspaceID[sourceID]
 	if !ok {
@@ -102,30 +142,47 @@ func (m *Manager) SourceToWorkspace(ctx context.Context, sourceID string) (strin
 	return workspaceID, nil
 }
 
-// WatchConfig returns a backend config map that excludes degraded workspaces.
-//
-// NOTE: WatchConfig is responsible for closing the channel when context gets cancel.
+// WatchConfig returns a channel of backend config maps that exclude degraded workspaces.
+// It emits again when the backend config or the degraded list changes, and is closed when ctx is canceled.
 func (m *Manager) WatchConfig(ctx context.Context) <-chan map[string]backendconfig.ConfigT {
-	m.init()
-
-	chIn := m.backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
-
 	chOut := make(chan map[string]backendconfig.ConfigT)
+	signal := make(chan struct{}, 1)
+	signal <- struct{}{} // emit Run's current snapshot, if any
+	m.subscribersMu.Lock()
+	m.subscribers[signal] = struct{}{}
+	m.subscribersMu.Unlock()
 
 	go func() {
-		for data := range chIn {
-			input := data.Data.(map[string]backendconfig.ConfigT)
-			filteredConfig := make(map[string]backendconfig.ConfigT, len(input))
+		defer close(chOut)
+		defer func() {
+			m.subscribersMu.Lock()
+			delete(m.subscribers, signal)
+			m.subscribersMu.Unlock()
+		}()
 
-			for workspaceID := range input {
-				if !m.DegradedWorkspace(workspaceID) {
-					filteredConfig[workspaceID] = input[workspaceID]
-				}
+		var sentVersion uint64
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-signal:
+			}
+			m.configMu.RLock()
+			input, version := m.fullConfig, m.configVersion
+			m.configMu.RUnlock()
+			// The startup signal and Run's notification can both observe the same snapshot.
+			if input == nil || version == sentVersion {
+				continue
 			}
 
-			chOut <- filteredConfig
+			filteredConfig := lo.OmitByKeys(input, m.degradedWorkspaceIDs.Load())
+			select {
+			case chOut <- filteredConfig:
+				sentVersion = version
+			case <-ctx.Done():
+				return
+			}
 		}
-		close(chOut)
 	}()
 
 	return chOut

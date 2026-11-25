@@ -2,6 +2,7 @@ package eloqua
 
 import (
 	"context"
+	stdjson "encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -19,7 +20,6 @@ import (
 )
 
 func (b *EloquaBulkUploader) createAsyncUploadErrorOutput(errorString string, err error, destinationId string, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
-	b.clearJobToCsvMap()
 	return common.AsyncUploadOutput{
 		FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
 		FailedReason:  fmt.Sprintf(errorString+"%v", err),
@@ -61,7 +61,6 @@ func (b *EloquaBulkUploader) Upload(_ context.Context, asyncDestStruct *common.A
 	}
 
 	uniqueKeys := getUniqueKeys(eloquaFields)
-	b.uniqueKeys = uniqueKeys
 	uploadJobInfo := JobInfo{
 		fileSizeLimit: b.fileSizeLimit,
 		importingJobs: asyncDestStruct.ImportingJobIDs,
@@ -93,7 +92,8 @@ func (b *EloquaBulkUploader) Upload(_ context.Context, asyncDestStruct *common.A
 		DynamicPart:   importDefinition.URI,
 		Authorization: b.authorization,
 	}
-	filePAth, fileSize, err := createCSVFile(eventDetails.Fields, file, &uploadJobInfo, b.jobToCSVMap)
+	jobIdRowMap := make(map[int64]int64)
+	filePAth, fileSize, err := createCSVFile(eventDetails.Fields, file, &uploadJobInfo, jobIdRowMap)
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("unable to create csv file. ", err, destination.ID, asyncDestStruct)
 	}
@@ -130,22 +130,33 @@ func (b *EloquaBulkUploader) Upload(_ context.Context, asyncDestStruct *common.A
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("unable to run the sync after uploading the file. ", err, destination.ID, asyncDestStruct)
 	}
-	importParameters, err := jsonrs.Marshal(common.ImportParameters{
+	jobImportingParameters := make(map[int64]stdjson.RawMessage, len(jobIdRowMap))
+	for row, jobID := range jobIdRowMap {
+		metadata, marshalErr := jsonrs.Marshal(importingMetadata{RecordIndex: row})
+		if marshalErr != nil {
+			b.logger.Errorn("marshalling importing metadata", obskit.Error(marshalErr))
+			continue
+		}
+		jobImportingParameters[jobID] = metadata
+	}
+	importParameters, err := jsonrs.Marshal(importingParameters{
 		ImportId:    syncURI + ":" + importDefinition.URI,
 		ImportCount: len(uploadJobInfo.succeededJobs),
+		UniqueKeys:  uniqueKeys,
 	})
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("error while marshaling parameters. ", err, destination.ID, asyncDestStruct)
 	}
 	uploadRetryableStat.Count(len(uploadJobInfo.failedJobs))
 	return common.AsyncUploadOutput{
-		ImportingJobIDs:     uploadJobInfo.succeededJobs,
-		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, uploadJobInfo.failedJobs...),
-		FailedReason:        "failed as the fileSizeLimit has over",
-		ImportingParameters: importParameters,
-		ImportingCount:      len(uploadJobInfo.succeededJobs),
-		FailedCount:         len(asyncDestStruct.FailedJobIDs) + len(uploadJobInfo.failedJobs),
-		DestinationID:       asyncDestStruct.Destination.ID,
+		ImportingJobIDs:        uploadJobInfo.succeededJobs,
+		FailedJobIDs:           append(asyncDestStruct.FailedJobIDs, uploadJobInfo.failedJobs...),
+		FailedReason:           "failed as the fileSizeLimit has over",
+		ImportingParameters:    importParameters,
+		JobImportingParameters: jobImportingParameters,
+		ImportingCount:         len(uploadJobInfo.succeededJobs),
+		FailedCount:            len(asyncDestStruct.FailedJobIDs) + len(uploadJobInfo.failedJobs),
+		DestinationID:          asyncDestStruct.Destination.ID,
 	}
 }
 
@@ -160,9 +171,6 @@ func (b *EloquaBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll)
 	defer func() {
 		if lo.Contains([]string{"success", "error", "warning"}, uploadStatus) {
 			b.deleteImportDef(importIds[1])
-		}
-		if err != nil || uploadStatus == "success" {
-			b.clearJobToCsvMap()
 		}
 	}()
 	if err != nil {
@@ -219,7 +227,6 @@ func (b *EloquaBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll)
 func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	var uploadStatusResponse common.GetUploadStatsResponse
 	defer func() {
-		b.clearJobToCsvMap()
 		eventsAbortedStat := b.statsFactory.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
 			"module":   "batch_router",
 			"destType": b.destName,
@@ -239,7 +246,12 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 			DynamicPart:   UploadStatsInput.WarningJobParameters,
 			Authorization: b.authorization,
 		}
-		eventStatMetaWithRejectedSucceededJobs, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b)
+		uniqueKeys := gjson.GetBytes(UploadStatsInput.Parameters, "uniqueKeys").Array()
+		keys := make([]string, 0, len(uniqueKeys))
+		for _, key := range uniqueKeys {
+			keys = append(keys, key.String())
+		}
+		eventStatMetaWithRejectedSucceededJobs, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, keys, b)
 		if err != nil {
 			b.logger.Errorn("Error while parsing rejected data", obskit.Error(err))
 			return common.GetUploadStatsResponse{
@@ -267,11 +279,5 @@ func (b *EloquaBulkUploader) deleteImportDef(importDefId string) {
 	err := b.service.DeleteImportDefinition(&deleteImportDefinitionData)
 	if err != nil {
 		b.logger.Errorn("Error while deleting import definition", obskit.Error(err))
-	}
-}
-
-func (b *EloquaBulkUploader) clearJobToCsvMap() {
-	for k := range b.jobToCSVMap {
-		delete(b.jobToCSVMap, k)
 	}
 }

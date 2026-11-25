@@ -3,12 +3,14 @@ package bqstreamallevents
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/auth"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
@@ -373,6 +375,27 @@ func TestBQStreamAllEvents(t *testing.T) {
 		require.ElementsMatch(t, []int64{1}, output.AbortJobIDs)
 		require.Equal(t, 1, output.AbortCount)
 		require.Contains(t, output.AbortReason, "failed to create discards table")
+	})
+
+	t.Run("Upload: terminal token error fetching schema", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := newManager(config.New(), logger.NOP, statsStore, destination)
+		sm.integrationManagerCreator = func(context.Context, destConfig) (IntegrationManager, error) {
+			return &mockIntegrationManager{
+				fetchSchemaOutput: func() (whutils.ModelSchema, error) {
+					return nil, fmt.Errorf("fetching schema: %w", &auth.Error{Response: &http.Response{StatusCode: http.StatusBadRequest}, Body: []byte(`{"error":"invalid_grant","error_description":"Invalid grant: account not found"}`)})
+				},
+			}, nil
+		}
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			ImportingJobIDs: []int64{1},
+			Destination:     destination,
+			FileName:        "testdata/successful_records.txt",
+		})
+		require.Equal(t, []int64{1}, output.AbortJobIDs)
+		require.Empty(t, output.FailedJobIDs)
 	})
 
 	t.Run("Upload: ignore already exist error during discards table creation", func(t *testing.T) {

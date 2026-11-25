@@ -2,6 +2,8 @@ package cpservice
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -9,7 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -165,4 +169,25 @@ func wsConfWithServiceFlag(url string, active bool) map[string]backendconfig.Con
 			Services: map[string]bool{ServiceName: active},
 		}},
 	}
+}
+
+func TestNewConnectorIdentityToken(t *testing.T) {
+	t.Setenv("DEPLOYMENT_TYPE", "MULTITENANT")
+	t.Setenv("WORKSPACE_NAMESPACE", "ns")
+	t.Setenv("WORKSPACE_TOKEN", "ws-token")
+
+	t.Run("sends the file token", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "token")
+		require.NoError(t, os.WriteFile(path, []byte("identity-token"), 0o600))
+		t.Setenv("DATAPLANE_IDENTITY_TOKEN_FILE", path)
+		c, err := NewConnector(config.New(), logger.NOP, stats.NOP, &fakeBackendConfig{}, nil)
+		require.NoError(t, err)
+		require.Equal(t, "identity-token", c.cm.AuthInfo.IdentityToken.Get())
+	})
+
+	t.Run("fails when the file can't be loaded", func(t *testing.T) {
+		t.Setenv("DATAPLANE_IDENTITY_TOKEN_FILE", filepath.Join(t.TempDir(), "missing"))
+		_, err := NewConnector(config.New(), logger.NOP, stats.NOP, &fakeBackendConfig{}, nil)
+		require.ErrorContains(t, err, "getting identity token: loading the identity token")
+	})
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
@@ -31,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
@@ -56,6 +59,100 @@ func createTestWorker(destType string, transformProxy bool, stat stats.Stats) *w
 		deliveryCountStatsCache: cache.NewStatsCache(func(labels deliveryMetricLabels) stats.Measurement {
 			return stat.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, labels.ToStatTags())
 		}),
+	}
+}
+
+func TestDeliveryCompressionMetrics(t *testing.T) {
+	const (
+		destType      = "TEST_DEST"
+		workspaceID   = "workspace-1"
+		destinationID = "destination-1"
+	)
+	for _, tc := range []struct {
+		name         string
+		proxy        bool
+		endpointPath string
+		body         map[string]any
+		payloadSize  int
+		compressed   bool
+	}{
+		{"native gzip", false, "/gzip", map[string]any{"GZIP": map[string]any{"payload": "repeated repeated repeated repeated"}}, len("repeated repeated repeated repeated"), true},
+		{"native plain", false, "/plain", map[string]any{"JSON_ARRAY": map[string]any{"batch": "plain"}}, 0, false},
+		{"proxy gzip", true, "/proxy", map[string]any{"GZIP": map[string]any{"payload": "gzip"}}, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := replaceDefaultStatsWithMemStats(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+			defer server.Close()
+			message, err := jsonrs.Marshal([]integrations.PostParametersT{{
+				Type: "REST", RequestMethod: http.MethodPost, URL: server.URL, EndpointPath: tc.endpointPath, Body: tc.body,
+			}})
+			require.NoError(t, err)
+
+			w := createTestWorker(destType, tc.proxy, stats.NOP)
+			w.ctx = t.Context()
+			w.logger = logger.NOP
+			w.rt.logger = logger.NOP
+			w.rt.netHandle = &netHandle{httpClient: http.DefaultClient, logger: logger.NOP}
+			w.rt.limiter.process = kitsync.NewLimiter(t.Context(), &sync.WaitGroup{}, "process", math.MaxInt, stats.NOP)
+			w.rt.limiter.stats.process = partition.NewStats()
+			w.rt.processJobsCountStat = stats.NOP.NewTaggedStat("process_jobs", stats.CountType, nil)
+			w.rt.processJobsHistogramStat = stats.NOP.NewTaggedStat("process_jobs_histogram", stats.HistogramType, nil)
+			w.rt.processRequestsCountStat = stats.NOP.NewTaggedStat("process_requests", stats.CountType, nil)
+			w.rt.processRequestsHistogramStat = stats.NOP.NewTaggedStat("process_requests_histogram", stats.HistogramType, nil)
+			w.rt.debugger = destinationdebugger.NewNoOpService()
+			w.rt.responseQ = make(chan workerJobStatus, 1)
+			w.rt.netClientTimeout = time.Second
+			w.rt.transformerTimeout = time.Second
+			w.rt.deliveryThrottlerTimeout = config.SingleValueLoader(time.Second)
+			w.rt.throttlerFactory = throttler.NewNoOpThrottlerFactory()
+			w.routerDeliveryLatencyStat = stats.NOP.NewTaggedStat("router_delivery_latency", stats.TimerType, nil)
+			w.rt.reportJobsdbPayload = config.SingleValueLoader(true)
+			w.rt.saveDestinationResponseOverride = config.SingleValueLoader(false)
+			w.rt.reloadableConfig.disableEventDeliveryUploadMasking = config.SingleValueLoader(true)
+			w.rt.reloadableConfig.skipRtAbortAlertForDelivery = config.SingleValueLoader(false)
+			w.rt.reloadableConfig.skipRtAbortAlertForTransformation = config.SingleValueLoader(false)
+			w.rt.reloadableConfig.minRetryBackoff = config.SingleValueLoader(time.Second)
+			w.rt.reloadableConfig.maxRetryBackoff = config.SingleValueLoader(time.Second)
+			w.deliveryTimeStat = stats.NOP.NewTaggedStat("delivery_time", stats.TimerType, nil)
+			w.routerProxyStat = stats.NOP.NewTaggedStat("router_proxy_latency", stats.TimerType, nil)
+			if tc.proxy {
+				mockTransformer := mocksTransformer.NewMockTransformer(gomock.NewController(t))
+				mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).Return(transformer.ProxyRequestResponse{
+					ProxyRequestStatusCode: http.StatusOK,
+					RespStatusCodes:        map[int64]int{1: http.StatusOK},
+					RespBodys:              map[int64]string{1: "ok"},
+				})
+				w.rt.transformer = mockTransformer
+			}
+
+			job := types.DestinationJobT{
+				Message:          message,
+				Destination:      backendconfig.DestinationT{ID: destinationID, WorkspaceID: workspaceID, DestinationDefinition: backendconfig.DestinationDefinitionT{Name: destType}},
+				JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: workspaceID, DestinationID: destinationID, TransformAt: "router", JobT: &jobsdb.JobT{WorkspaceId: workspaceID, Parameters: routerutils.EmptyPayload}}},
+			}
+			w.process([]types.DestinationJobT{job})
+
+			payloadTags := stats.Tags{"destType": destType, "workspaceID": workspaceID, "destinationID": destinationID}
+			require.Equal(t, float64(len(message)), store.Get("router_delivery_payload_size_bytes", payloadTags).LastValue())
+			compressionTags := stats.Tags{"destType": destType, "workspaceID": workspaceID, "endpointPath": tc.endpointPath}
+			for _, metric := range []string{
+				"router_delivery_uncompressed_payload_size_bytes",
+				"router_delivery_compressed_payload_size_bytes",
+				"router_delivery_compression_duration_seconds",
+			} {
+				if tc.compressed {
+					require.NotNil(t, store.Get(metric, compressionTags), metric)
+				} else {
+					require.Nil(t, store.Get(metric, compressionTags), metric)
+				}
+			}
+			if tc.compressed {
+				require.Equal(t, float64(tc.payloadSize), store.Get("router_delivery_uncompressed_payload_size_bytes", compressionTags).LastValue())
+				require.Positive(t, store.Get("router_delivery_compressed_payload_size_bytes", compressionTags).LastValue())
+				require.Positive(t, store.Get("router_delivery_compression_duration_seconds", compressionTags).LastValue())
+			}
+		})
 	}
 }
 

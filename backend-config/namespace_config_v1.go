@@ -11,6 +11,7 @@ import (
 
 	"github.com/cenkalti/backoff/v5"
 
+	"github.com/rudderlabs/rudder-cp-sdk/tokenfile"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -31,6 +32,7 @@ type v1ConfigFetcher struct {
 
 	namespace                string
 	identity                 identity.Identifier
+	identityToken            *tokenfile.Token
 	configBackendURL         *url.URL
 	cpRouterURL              string
 	incrementalConfigUpdates bool
@@ -48,6 +50,7 @@ func newV1ConfigFetcher(nc *namespaceConfig) *v1ConfigFetcher {
 
 		namespace:                nc.namespace,
 		identity:                 nc.Identity(),
+		identityToken:            nc.identityToken,
 		configBackendURL:         nc.configBackendURL,
 		cpRouterURL:              nc.cpRouterURL,
 		incrementalConfigUpdates: nc.incrementalConfigUpdates,
@@ -93,6 +96,7 @@ func (f *v1ConfigFetcher) getFromAPI(ctx context.Context) (map[string]ConfigT, e
 
 	operation := func() (fetchError error) {
 		f.logger.Debugn("Fetching backend config", logger.NewStringField("url", urlString))
+		f.setAuth(req)
 		respBody, fetchError = f.makeHTTPRequest(req)
 		return fetchError
 	}
@@ -161,10 +165,16 @@ func (f *v1ConfigFetcher) prepareHTTPRequest(ctx context.Context, url string) (*
 	if err != nil {
 		return nil, err
 	}
-
-	req.SetBasicAuth(f.identity.BasicAuth())
-
 	return req, nil
+}
+
+// setAuth sends the workload identity token as a Bearer credential when one is configured, otherwise the Basic secret.
+func (f *v1ConfigFetcher) setAuth(req *http.Request) {
+	if f.identityToken != nil {
+		req.Header.Set("Authorization", "Bearer "+f.identityToken.Get())
+		return
+	}
+	req.SetBasicAuth(f.identity.BasicAuth())
 }
 
 func (f *v1ConfigFetcher) makeHTTPRequest(req *http.Request) ([]byte, error) {

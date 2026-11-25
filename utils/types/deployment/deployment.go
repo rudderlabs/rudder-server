@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-cp-sdk/tokenfile"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
@@ -72,4 +73,19 @@ func GetConnectionToken() (string, string, bool, error) {
 		}
 	}
 	return connectionToken, tokenType, isMultiWorkspace, nil
+}
+
+// IdentityToken returns the dataplane identity token to send on cp-router handshakes, or nil when none is sent:
+// only NAMESPACE handshakes carry one, and only when DATAPLANE_IDENTITY_TOKEN_FILE is set.
+// It fails when the file can't be loaded, as backend config does for the same file.
+func IdentityToken(tokenType string) (*tokenfile.Token, error) {
+	path := config.GetStringVar("", "DATAPLANE_IDENTITY_TOKEN_FILE")
+	if tokenType != namespace || path == "" {
+		return nil, nil // nolint:nilnil // no token to send is not an error
+	}
+	token := tokenfile.New(path)
+	if err := token.Load(); err != nil {
+		return nil, fmt.Errorf("loading the identity token: %w", err)
+	}
+	return token, nil
 }

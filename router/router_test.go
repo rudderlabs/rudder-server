@@ -822,6 +822,7 @@ func TestRouter(t *testing.T) {
 				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT) {
 					assert.Len(t, drainList, 1)
 					assertJobStatus(t, unprocessedJobsList[0], drainList[0], jobsdb.Aborted.State, "410", `{"reason": "job expired"}`, 0)
+					assert.Equal(t, routerutils.DrainReasonJobExpired, drainList[0].DrainReason)
 					routerAborted.Store(true)
 				})
 

@@ -725,7 +725,7 @@ func TestCompactionMaxDSSizeGuard(t *testing.T) {
 	t.Run("pair exceeding maxDSSize is discarded", func(t *testing.T) {
 		// maxDSSize=10, threshold=0.7 → pair threshold=7
 		// DS1: 6 pending (needsPair since 6 < 7)
-		// DS2: 6 pending → 6+6=12 > maxDSSize → waiting cleared, nothing compacts
+		// DS2: 6 pending → 6+6=12 > maxDSSize → DS2 replaces DS1 as the waiting dataset, nothing compacts
 		// DS3: last DS (exempt)
 		jd, trigger, c := newJobDB(t, 10, 0.7)
 		allJobs := genJobs(defaultWorkspaceID, "test", 30, 1) // 2 regular DSes + 1 last, 10 jobs each
@@ -739,6 +739,30 @@ func TestCompactionMaxDSSizeGuard(t *testing.T) {
 		result, err := jd.getCompactionList(dsList, nil, jd.maintenanceDB())
 		require.NoError(t, err)
 		require.Empty(t, result.compactFrom)
+	})
+
+	t.Run("dataset of a discarded pair can pair with the next one", func(t *testing.T) {
+		// maxDSSize=10, threshold=0.7 → pair threshold=7
+		// DS1: 6 pending (needsPair since 6 < 7)
+		// DS2: 6 pending → 6+6=12 > maxDSSize → DS2 replaces DS1 as the waiting dataset
+		// DS3: 3 pending → pair with DS2: 6+3=9 ≤ 10
+		// DS4: last DS (exempt)
+		jd, trigger, c := newJobDB(t, 10, 0.7)
+		allJobs := genJobs(defaultWorkspaceID, "test", 40, 1) // 3 regular DSes + 1 last, 10 jobs each
+		addDS(t, jd, trigger, allJobs[:10], 6)
+		addDS(t, jd, trigger, allJobs[10:20], 6)
+		addDS(t, jd, trigger, allJobs[20:30], 3)
+		require.NoError(t, jd.Store(context.Background(), allJobs[30:]))
+
+		dsList := jd.getDSListSnapshot()
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxMigrateDSProbe", len(dsList))
+
+		result, err := jd.getCompactionList(dsList, nil, jd.maintenanceDB())
+		require.NoError(t, err)
+		require.Len(t, result.compactFrom, 2)
+		require.Equal(t, dsList[1].Index, result.compactFrom[0].ds.Index)
+		require.Equal(t, dsList[2].Index, result.compactFrom[1].ds.Index)
+		require.Equal(t, 9, result.pendingJobsCount)
 	})
 }
 

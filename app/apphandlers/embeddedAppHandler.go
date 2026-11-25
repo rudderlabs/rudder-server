@@ -243,6 +243,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 	if err != nil {
 		return err
 	}
+	gwRODB = withReadCursor(config, gwRODB, gwROHandle)
 
 	rtRWHandle := jobsdb.NewForReadWrite(
 		"rt",
@@ -256,7 +257,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer rtRWHandle.Close()
-	rtRWDB := jobsdb.NewPendingEventsJobsDB(rtRWHandle, pendingEventsRegistry)
+	rtRWDB := jobsdb.NewPendingEventsJobsDB(withReadCursor(config, rtRWHandle, rtRWHandle), pendingEventsRegistry)
 
 	brtRWHandle := jobsdb.NewForReadWrite(
 		"batch_rt",
@@ -270,9 +271,9 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer brtRWHandle.Close()
-	brtRWDB := jobsdb.NewPendingEventsJobsDB(brtRWHandle, pendingEventsRegistry)
+	brtRWDB := jobsdb.NewPendingEventsJobsDB(withReadCursor(config, brtRWHandle, brtRWHandle), pendingEventsRegistry)
 
-	eschRWDB := jobsdb.NewForReadWrite(
+	eschRWHandle := jobsdb.NewForReadWrite(
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in esch jobsdb
@@ -282,9 +283,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		jobsdb.WithDBHandle(jobsdbPool),
 		jobsdb.WithMaintenancePoolDB(maintenancePool),
 	)
-	defer eschRWDB.Close()
+	defer eschRWHandle.Close()
+	eschRWDB := withReadCursor(config, eschRWHandle, eschRWHandle)
 
-	arcRWDB := jobsdb.NewForReadWrite(
+	arcRWHandle := jobsdb.NewForReadWrite(
 		"arc",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDefaultSkipStatusCompaction(true), // no failed job statuses in arc jobsdb
@@ -295,7 +297,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 		jobsdb.WithDBHandle(jobsdbPool),
 		jobsdb.WithMaintenancePoolDB(maintenancePool),
 	)
-	defer arcRWDB.Close()
+	defer arcRWHandle.Close()
+	arcRWDB := withReadCursor(config, arcRWHandle, arcRWHandle)
 
 	var procRWDB jobsdb.JobsDB
 	if config.GetBoolVar(false, "Processor.DestinationIsolation.enabled") {
@@ -313,7 +316,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), op
 			jobsdb.WithNumPartitions(partitionCount),
 		)
 		defer procRWHandle.Close()
-		procRWDB = jobsdb.NewPendingEventsJobsDB(procRWHandle, pendingEventsRegistry, jobsdb.WithConsumerAsDestinationID())
+		procRWDB = jobsdb.NewPendingEventsJobsDB(withReadCursor(config, procRWHandle, procRWHandle), pendingEventsRegistry, jobsdb.WithConsumerAsDestinationID())
 	}
 
 	var schemaForwarder schema_forwarder.Forwarder

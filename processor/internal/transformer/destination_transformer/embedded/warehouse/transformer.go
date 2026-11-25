@@ -258,7 +258,7 @@ func (t *Transformer) getColumns(
 	uuidTS := whutils.ToProviderCase(destType, "uuid_ts")
 	columns[uuidTS] = model.DateTimeDataType
 
-	if destType == whutils.BQ || destType == whutils.BQStreamAllEvents {
+	if destType == whutils.BQ || destType == whutils.BQStreamAllEvents || destType == whutils.MAXCOMPUTE {
 		columns["loaded_at"] = model.DateTimeDataType
 	}
 

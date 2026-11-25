@@ -19,6 +19,9 @@ jobs are stored by other processes: it counts the jobs of sealed datasets once, 
 subtracts their terminal statuses as they commit, and polls the last dataset for the
 rest. A count and the subtractions that race with it are reconciled through the
 count's postgres snapshot and the transaction id of each status write.
+
+NewReadCursor decorates a handle with a watermark per pipeline: the job id below which none of the
+pipeline's jobs is pending. Reads skip the sealed datasets below the watermark persisted last.
 */
 
 package jobsdb
@@ -228,6 +231,7 @@ type JobStatusT struct {
 	WorkspaceId   string          `json:"WorkspaceId"` // not stored in DB
 	PartitionID   string          `json:"-"`           // not stored in DB
 	CustomVal     string          `json:"-"`           // not stored in DB
+	DrainReason   string          `json:"-"`           // not stored in DB; set on drained statuses for metrics
 }
 
 type ConnectionID struct {
@@ -392,6 +396,7 @@ type Handle struct {
 		maxWriters                     int
 		maxOpenConnections             int
 		analyzeThreshold               config.ValueLoader[int]
+		statusJobIDNDistinct           config.ValueLoader[float64]
 		MaxDSSize                      config.ValueLoader[int]
 		numPartitions                  int // if zero or negative, no partitioning
 		partitionFunction              func(job *JobT) string

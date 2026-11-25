@@ -18,6 +18,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
@@ -27,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	internalapi "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -60,6 +62,65 @@ func (m *mockAPI) GetStatus(_ context.Context, channelID string) (*model.StatusR
 func (m *mockAPI) GetBulkStatus(_ context.Context, channelIDs []string) (*model.BulkStatusResponse, error) {
 	statusKey := bulkStatusKey(channelIDs...)
 	return m.getBulkStatusOutputMap[statusKey]()
+}
+
+type logEntry struct {
+	level   string
+	message string
+	fields  map[string]any
+}
+
+type recordingLogger struct {
+	logger.Logger
+	entries *[]logEntry
+	fields  map[string]any
+}
+
+func newRecordingLogger() *recordingLogger {
+	entries := make([]logEntry, 0)
+	return &recordingLogger{Logger: logger.NOP, entries: &entries}
+}
+
+func (l *recordingLogger) Child(_ string) logger.Logger { return l }
+
+func (l *recordingLogger) Withn(fields ...logger.Field) logger.Logger {
+	values := maps.Clone(l.fields)
+	if values == nil {
+		values = make(map[string]any)
+	}
+	for _, field := range fields {
+		values[field.Name()] = field.Value()
+	}
+	return &recordingLogger{Logger: l.Logger, entries: l.entries, fields: values}
+}
+
+func (l *recordingLogger) record(level, message string, fields []logger.Field) {
+	values := maps.Clone(l.fields)
+	if values == nil {
+		values = make(map[string]any)
+	}
+	for _, field := range fields {
+		values[field.Name()] = field.Value()
+	}
+	*l.entries = append(*l.entries, logEntry{level: level, message: message, fields: values})
+}
+
+func (l *recordingLogger) Infon(message string, fields ...logger.Field) {
+	l.record("info", message, fields)
+}
+
+func (l *recordingLogger) Debugn(message string, fields ...logger.Field) {
+	l.record("debug", message, fields)
+}
+
+func (l *recordingLogger) entriesFor(level, message string) []logEntry {
+	var matches []logEntry
+	for _, entry := range *l.entries {
+		if entry.level == level && (message == "" || entry.message == message) {
+			matches = append(matches, entry)
+		}
+	}
+	return matches
 }
 
 func bulkStatusKey(channelIDs ...string) string {
@@ -3394,6 +3455,70 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}
 	})
 
+	t.Run("getBulkStatus batches and merges responses", func(t *testing.T) {
+		for _, tc := range []struct {
+			name          string
+			channelCount  int
+			reloadSize    int
+			expectedSizes []int
+		}{
+			{name: "150 channels by default", channelCount: 150, expectedSizes: []int{100, 50}},
+			{name: "500 channels by default", channelCount: 500, expectedSizes: slices.Repeat([]int{100}, 5)},
+			{name: "1000 channels by default", channelCount: 1000, expectedSizes: slices.Repeat([]int{100}, 10)},
+			{name: "1001 channels by default", channelCount: 1001, expectedSizes: append(slices.Repeat([]int{100}, 10), 1)},
+			{name: "reloaded smaller batch size", channelCount: 200, reloadSize: 40, expectedSizes: slices.Repeat([]int{40}, 5)},
+			{name: "reloaded larger batch size", channelCount: 600, reloadSize: 250, expectedSizes: []int{250, 250, 100}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				conf := config.New()
+				sm := New(conf, logger.NOP, stats.NOP, destination)
+				if tc.reloadSize > 0 {
+					conf.Set("SnowpipeStreaming.bulkStatusBatchSize", tc.reloadSize)
+				}
+
+				channelIDs := make([]string, tc.channelCount)
+				expectedStatuses := make(map[string]*model.StatusResponse)
+				var expectedNotFound []string
+				for i := range channelIDs {
+					channelIDs[i] = fmt.Sprintf("channel-%04d", i)
+					if i%2 == 0 {
+						expectedStatuses[channelIDs[i]] = &model.StatusResponse{Success: true, Offset: "5", Valid: true}
+					} else {
+						expectedNotFound = append(expectedNotFound, channelIDs[i])
+					}
+				}
+
+				var callSizes []int
+				responses := make(map[string]func() (*model.BulkStatusResponse, error))
+				start := 0
+				for _, size := range tc.expectedSizes {
+					chunk := channelIDs[start : start+size]
+					start += size
+					statuses := make(map[string]*model.StatusResponse)
+					var notFound []string
+					for _, id := range chunk {
+						if status, ok := expectedStatuses[id]; ok {
+							statuses[id] = status
+						} else {
+							notFound = append(notFound, id)
+						}
+					}
+					responses[strings.Join(chunk, ",")] = func() (*model.BulkStatusResponse, error) {
+						callSizes = append(callSizes, len(chunk))
+						return &model.BulkStatusResponse{Success: true, Statuses: statuses, NotFound: notFound}, nil
+					}
+				}
+				sm.api = &mockAPI{getBulkStatusOutputMap: responses}
+
+				statuses, notFound, err := sm.getBulkStatus(context.Background(), channelIDs)
+				require.NoError(t, err)
+				require.Equal(t, tc.expectedSizes, callSizes)
+				require.Equal(t, expectedStatuses, statuses)
+				require.Equal(t, expectedNotFound, notFound)
+			})
+		}
+	})
+
 	t.Run("provideInProgressImportInfos", func(t *testing.T) {
 		tests := []struct {
 			name                       string
@@ -4313,6 +4438,273 @@ func TestFindNewColumns(t *testing.T) {
 			assert.ElementsMatch(t, tt.expected, result)
 		})
 	}
+}
+
+func TestSnowpipeStreamingLogSummaries(t *testing.T) {
+	destination := &backendconfig.DestinationT{
+		ID: "test-destination", WorkspaceID: "test-workspace",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "SNOWPIPE_STREAMING"},
+		Config:                map[string]any{},
+	}
+
+	t.Run("cold-cache upload has a fixed number of INFO logs", func(t *testing.T) {
+		for _, tableCount := range []int{1, 4} {
+			t.Run(fmt.Sprintf("%d tables", tableCount), func(t *testing.T) {
+				log := newRecordingLogger()
+				sm := New(config.New(), log, stats.NOP, destination)
+				createdTables := make(map[string]bool)
+				fake := &fakeWarehouseManager{createTable: func(table string, _ whutils.ModelTableSchema) error {
+					createdTables[table] = true
+					return nil
+				}}
+				sm.managerCreator = func(context.Context, whutils.ModelWarehouse, *config.Config, logger.Logger, stats.Stats) (manager.Manager, error) {
+					return fake, nil
+				}
+				mock := &mockAPI{
+					createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+						discardsTable(): func() (*model.ChannelResponse, error) {
+							return &model.ChannelResponse{Success: true, ChannelID: rudderDiscardsChannelResponse.ChannelID, SnowpipeSchema: discardsSchema()}, nil
+						},
+					},
+					insertOutputMap:        map[string]func() (*model.InsertResponse, error){},
+					getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){},
+				}
+				mock.insertOutputMap[rudderDiscardsChannelResponse.ChannelID] = func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				}
+				file, err := os.CreateTemp(t.TempDir(), "events-*.jsonl")
+				require.NoError(t, err)
+				channelIDs := make([]string, 0, tableCount)
+				for i := range tableCount {
+					table := fmt.Sprintf("TABLE_%d", i)
+					channelID := fmt.Sprintf("channel-%d", i)
+					channelIDs = append(channelIDs, channelID)
+					mock.createChannelOutputMap[table] = func() (*model.ChannelResponse, error) {
+						if !createdTables[table] {
+							return &model.ChannelResponse{Success: false, Code: internalapi.ErrTableDoesNotExistOrNotAuthorized}, nil
+						}
+						return &model.ChannelResponse{Success: true, ChannelID: channelID, SnowpipeSchema: map[string]string{"ID": "int"}}, nil
+					}
+					mock.insertOutputMap[channelID] = func() (*model.InsertResponse, error) {
+						return &model.InsertResponse{Success: true}, nil
+					}
+					_, err = fmt.Fprintf(file, `{"message":{"metadata":{"table":%q,"columns":{"ID":"int"}},"data":{"ID":%d}},"metadata":{"job_id":%d}}`+"\n", table, i+1, i+1001)
+					require.NoError(t, err)
+				}
+				require.NoError(t, file.Close())
+				for _, id := range channelIDs {
+					mock.getBulkStatusOutputMap[id] = func() (*model.BulkStatusResponse, error) {
+						return &model.BulkStatusResponse{Success: true, Statuses: map[string]*model.StatusResponse{
+							id: {Success: true, Valid: true},
+						}}, nil
+					}
+				}
+				mock.getBulkStatusOutputMap[bulkStatusKey(channelIDs...)] = func() (*model.BulkStatusResponse, error) {
+					statuses := make(map[string]*model.StatusResponse, tableCount)
+					for _, id := range channelIDs {
+						statuses[id] = &model.StatusResponse{Success: true, Valid: true}
+					}
+					return &model.BulkStatusResponse{Success: true, Statuses: statuses}, nil
+				}
+				// Wrap the raw mock so CreateChannel's cold-cache logs are included.
+				sm.api = newApiAdapter(sm.logger, stats.NOP, mock, destination)
+				output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{Destination: destination, FileName: file.Name(), Count: tableCount})
+				require.Equal(t, tableCount, output.ImportingCount)
+				require.Len(t, createdTables, tableCount)
+				require.Equal(t, tableCount, fake.createTableCalls)
+				require.Len(t, log.entriesFor("info", ""), 4) // start, read, discards, completion
+				require.Len(t, log.entriesFor("debug", "Creating channel"), 2*tableCount+1)
+				require.Len(t, log.entriesFor("debug", "Create channel response"), 2*tableCount+1)
+				require.Len(t, log.entriesFor("debug", "Handling table error"), tableCount)
+				require.Empty(t, log.entriesFor("info", "Handling table error"))
+				for _, message := range []string{"Sending events to Snowpipe", "Prepared channel", "Sent events to Snowpipe"} {
+					require.Len(t, log.entriesFor("debug", message), tableCount)
+					require.Empty(t, log.entriesFor("info", message))
+				}
+				require.Empty(t, log.entriesFor("info", "Creating channel"))
+				require.Empty(t, log.entriesFor("info", "Create channel response"))
+				summaries := log.entriesFor("info", "Uploaded data to snowpipe streaming destination")
+				require.Len(t, summaries, 1)
+				require.Equal(t, destination.ID, summaries[0].fields["destinationId"])
+				require.Equal(t, destination.WorkspaceID, summaries[0].fields["workspaceId"])
+				require.Equal(t, destination.DestinationDefinition.Name, summaries[0].fields["destinationType"])
+				require.EqualValues(t, tableCount, summaries[0].fields["tables"])
+				require.EqualValues(t, tableCount, summaries[0].fields["events"])
+				require.EqualValues(t, tableCount, summaries[0].fields["importingJobs"])
+				require.EqualValues(t, 0, summaries[0].fields["failedJobs"])
+				require.EqualValues(t, 0, summaries[0].fields["abortedJobs"])
+				require.EqualValues(t, 1001, summaries[0].fields["minJobID"])
+				require.EqualValues(t, 1000+tableCount, summaries[0].fields["maxJobID"])
+			})
+		}
+	})
+}
+
+func TestSnowpipeStreamingDiscardLogLevel(t *testing.T) {
+	log := newRecordingLogger()
+	destination := &backendconfig.DestinationT{
+		ID: "destination", WorkspaceID: "workspace",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "SNOWPIPE_STREAMING"}, Config: map[string]any{},
+	}
+	sm := New(config.New(), log, stats.NOP, destination)
+	sm.channelCache.Store(discardsTable(), rudderDiscardsChannelResponse)
+	sm.channelCache.Store("PRODUCTS", productsChannelResponse)
+	sm.api = &mockAPI{
+		insertOutputMap: map[string]func() (*model.InsertResponse, error){
+			productsChannelResponse.ChannelID:       func() (*model.InsertResponse, error) { return &model.InsertResponse{Success: true}, nil },
+			rudderDiscardsChannelResponse.ChannelID: func() (*model.InsertResponse, error) { return &model.InsertResponse{Success: true}, nil },
+		},
+		getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+			productsChannelResponse.ChannelID: func() (*model.BulkStatusResponse, error) {
+				return &model.BulkStatusResponse{Success: true, Statuses: map[string]*model.StatusResponse{
+					productsChannelResponse.ChannelID: {Success: true, Valid: true},
+				}}, nil
+			},
+		},
+	}
+	file, err := os.CreateTemp(t.TempDir(), "discards-*.jsonl")
+	require.NoError(t, err)
+	_, err = fmt.Fprintln(file, `{"message":{"metadata":{"table":"PRODUCTS","columns":{"ID":"int","PRICE":"string","RECEIVED_AT":"datetime"}},"data":{"ID":1,"PRICE":"not-a-number","RECEIVED_AT":"2023-05-12T04:36:50.199Z"}},"metadata":{"job_id":1001}}`)
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+	output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{Destination: destination, FileName: file.Name(), Count: 1})
+	require.Equal(t, 1, output.ImportingCount)
+	require.Len(t, log.entriesFor("debug", "Inserting events into discards table"), 1)
+	require.Empty(t, log.entriesFor("info", "Inserting events into discards table"))
+}
+
+func TestSnowpipeStreamingPollLogSummary(t *testing.T) {
+	destination := &backendconfig.DestinationT{
+		ID: "test-destination", WorkspaceID: "test-workspace",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "SNOWPIPE_STREAMING"}, Config: map[string]any{},
+	}
+	for _, tableCount := range []int{1, 4} {
+		t.Run(fmt.Sprintf("%d tables", tableCount), func(t *testing.T) {
+			log := newRecordingLogger()
+			sm := New(config.New(), log, stats.NOP, destination)
+			mock := &mockAPI{
+				getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){},
+				deleteChannelOutputMap: map[string]func() error{},
+			}
+			var infos []*importInfo
+			ids := make([]string, tableCount)
+			for i := range tableCount {
+				id := fmt.Sprintf("channel-%d", i)
+				ids[i] = id
+				offset := i + 1001
+				if tableCount > 2 && i == 0 {
+					// The first table also contains job 1001, but only its latest offset is available to Poll.
+					offset = 1003
+				}
+				infos = append(infos, &importInfo{ChannelID: id, Offset: fmt.Sprint(offset), Table: fmt.Sprintf("TABLE_%d", i), Count: 1})
+				mock.deleteChannelOutputMap[id] = func() error { return nil }
+			}
+			mock.getBulkStatusOutputMap[bulkStatusKey(ids...)] = func() (*model.BulkStatusResponse, error) {
+				statuses := make(map[string]*model.StatusResponse)
+				for i, id := range ids {
+					switch i {
+					case 0: // cached committed on a subsequent call
+						statuses[id] = &model.StatusResponse{Success: true, Valid: true, Offset: infos[i].Offset}
+					case 1: // failed, including while another table remains in progress
+						statuses[id] = &model.StatusResponse{Success: false, Valid: true}
+					default:
+						statuses[id] = &model.StatusResponse{Success: true, Valid: true, Offset: "0", LatestInsertedOffset: fmt.Sprint(i + 1001)}
+					}
+				}
+				return &model.BulkStatusResponse{Success: true, Statuses: statuses}, nil
+			}
+			if tableCount > 2 {
+				pendingIDs := ids[2:]
+				mock.getBulkStatusOutputMap[bulkStatusKey(pendingIDs...)] = func() (*model.BulkStatusResponse, error) {
+					statuses := make(map[string]*model.StatusResponse)
+					for i, id := range pendingIDs {
+						statuses[id] = &model.StatusResponse{Success: true, Valid: true, Offset: fmt.Sprint(i + 1003)}
+					}
+					return &model.BulkStatusResponse{Success: true, Statuses: statuses}, nil
+				}
+			}
+			sm.api = mock
+			importID, err := jsonrs.Marshal(infos)
+			require.NoError(t, err)
+			first := sm.Poll(context.Background(), common.AsyncPoll{ImportId: string(importID)})
+			require.Equal(t, tableCount > 2, first.InProgress)
+			infoLogs := log.entriesFor("info", "")
+			require.Len(t, infoLogs, 2) // start and summary; no per-table info
+			summary := log.entriesFor("info", "Polled snowpipe streaming destination")
+			require.Len(t, summary, 1)
+			require.EqualValues(t, tableCount, summary[0].fields["tables"])
+			require.EqualValues(t, 1, summary[0].fields["committed"])
+			if tableCount > 1 {
+				require.EqualValues(t, 1, summary[0].fields["failed"])
+				require.EqualValues(t, tableCount-2, summary[0].fields["inProgress"])
+			} else {
+				require.EqualValues(t, 0, summary[0].fields["failed"])
+				require.EqualValues(t, 0, summary[0].fields["inProgress"])
+			}
+			expectedMinOffset := 1001
+			if tableCount > 2 {
+				expectedMinOffset = 1002 // job 1001 belongs to the first table but is not an offset
+			}
+			require.EqualValues(t, expectedMinOffset, summary[0].fields["minTableOffset"])
+			require.EqualValues(t, 1000+tableCount, summary[0].fields["maxTableOffset"])
+			require.NotContains(t, summary[0].fields, "minJobID")
+			require.Equal(t, destination.ID, summary[0].fields["destinationId"])
+			require.Equal(t, destination.WorkspaceID, summary[0].fields["workspaceId"])
+			require.Equal(t, destination.DestinationDefinition.Name, summary[0].fields["destinationType"])
+			if tableCount > 2 {
+				second := sm.Poll(context.Background(), common.AsyncPoll{ImportId: string(importID)})
+				require.False(t, second.InProgress)
+				require.Len(t, log.entriesFor("info", ""), 4)
+				summaries := log.entriesFor("info", "Polled snowpipe streaming destination")
+				require.Len(t, summaries, 2)
+				require.EqualValues(t, tableCount-1, summaries[1].fields["committed"])
+				require.EqualValues(t, 1, summaries[1].fields["failed"])
+				require.EqualValues(t, 0, summaries[1].fields["inProgress"])
+			}
+		})
+	}
+
+	t.Run("malformed import ID", func(t *testing.T) {
+		log := newRecordingLogger()
+		sm := New(config.New(), log, stats.NOP, destination)
+		response := sm.Poll(context.Background(), common.AsyncPoll{ImportId: "invalid"})
+		require.True(t, response.HasFailed)
+		require.Len(t, log.entriesFor("info", ""), 2)
+		summary := log.entriesFor("info", "Polled snowpipe streaming destination")
+		require.Len(t, summary, 1)
+		require.EqualValues(t, 0, summary[0].fields["tables"])
+		require.Equal(t, true, summary[0].fields["invalidImportID"])
+	})
+
+	t.Run("stuck threshold", func(t *testing.T) {
+		log := newRecordingLogger()
+		sm := New(config.New(), log, stats.NOP, destination)
+		sm.api = &mockAPI{
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"channel-1": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{Success: true, Statuses: map[string]*model.StatusResponse{
+						"channel-1": {Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1001"},
+					}}, nil
+				},
+			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"channel-1": func() (*model.StatusResponse, error) { return &model.StatusResponse{Valid: true, Success: true}, nil },
+			},
+			deleteChannelOutputMap: map[string]func() error{"channel-1": func() error { return nil }},
+		}
+		now := time.Now()
+		sm.now = func() time.Time { return now }
+		importID := `[{"channelId":"channel-1","offset":"1001","table":"TABLE_1","count":1}]`
+		require.True(t, sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID}).InProgress)
+		now = now.Add(time.Hour)
+		require.True(t, sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID}).HasFailed)
+		summaries := log.entriesFor("info", "Polled snowpipe streaming destination")
+		require.Len(t, summaries, 2)
+		require.EqualValues(t, 1, summaries[0].fields["inProgress"])
+		require.EqualValues(t, 0, summaries[0].fields["failed"])
+		require.EqualValues(t, 0, summaries[1].fields["inProgress"])
+		require.EqualValues(t, 1, summaries[1].fields["failed"])
+	})
 }
 
 func TestDestConfig_Decode(t *testing.T) {

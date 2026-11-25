@@ -270,6 +270,9 @@ func (jd *Handle) writerSetup(ctx context.Context, l lock.LockToken) {
 	// If no DS present, add one
 	dsList, _ := jd.dsList.snapshot()
 	if len(dsList) == 0 {
+		// job ids start over with the first dataset, so the read cursors no longer hold
+		_, err := jd.dbHandle.ExecContext(ctx, `TRUNCATE `+jd.readCursorsTable())
+		jd.assertError(err)
 		jd.addNewDS(ctx, l, newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend(l)))
 	}
 

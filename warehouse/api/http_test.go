@@ -100,8 +100,12 @@ func TestHTTPApi(t *testing.T) {
 										Name: warehouseutils.POSTGRES,
 									},
 								},
+								{ID: "second_destination", Enabled: true, DestinationDefinition: backendconfig.DestinationDefinitionT{Name: warehouseutils.POSTGRES}},
 							},
 						},
+						{ID: "second_source", Enabled: true, Destinations: []backendconfig.DestinationT{
+							{ID: destinationID, Enabled: true, DestinationDefinition: backendconfig.DestinationDefinitionT{Name: warehouseutils.POSTGRES}},
+						}},
 					},
 				},
 				degradedWorkspaceID: {
@@ -516,6 +520,29 @@ func TestHTTPApi(t *testing.T) {
 			require.False(t, isTriggered)
 		})
 
+		t.Run("pending files for removed destinations are excluded", func(t *testing.T) {
+			file := model.StagingFile{
+				WorkspaceID:     workspaceID,
+				SourceID:        sourceID,
+				DestinationID:   "removed_destination",
+				SourceTaskRunID: "removed_task_run",
+			}.WithSchema([]byte(`{"type": "object"}`))
+			_, err := stagingRepo.Insert(ctx, &file)
+			require.NoError(t, err)
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/pending-events", bytes.NewReader([]byte(`{"source_id":"test_source_id","task_run_id":"removed_task_run"}`)))
+			resp := httptest.NewRecorder()
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore, true)
+			a.pendingEventsHandler(resp, req)
+			require.Equal(t, http.StatusOK, resp.Code)
+
+			var pending pendingEventsResponse
+			require.NoError(t, jsonrs.NewDecoder(resp.Body).Decode(&pending))
+			require.False(t, pending.PendingEvents)
+			require.Zero(t, pending.PendingStagingFilesCount)
+			require.Zero(t, pending.PendingUploadCount)
+		})
+
 		t.Run("pending events available with trigger uploads", func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/pending-events?triggerUpload=true", bytes.NewReader([]byte(`
 				{
@@ -535,6 +562,7 @@ func TestHTTPApi(t *testing.T) {
 
 			defer func() {
 				triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
+				triggerStore.Delete("POSTGRES:test_source_id:second_destination")
 			}()
 
 			require.EqualValues(t, pendingEventsResponse.PendingEvents, true)
@@ -744,6 +772,30 @@ func TestHTTPApi(t *testing.T) {
 
 			_, isTriggered := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
 			require.True(t, isTriggered)
+		})
+
+		t.Run("source and destination intersection", func(t *testing.T) {
+			triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
+			triggerStore.Delete("POSTGRES:test_source_id:second_destination")
+			triggerStore.Delete("POSTGRES:second_source:test_destination_id")
+			req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/trigger-upload", bytes.NewBufferString(`{"source_id":"test_source_id","destination_id":"test_destination_id"}`))
+			resp := httptest.NewRecorder()
+			a := NewApi(config.MasterMode, config.New(), logger.NOP, stats.NOP, mockBackendConfig, db, n, tenantManager, bcManager, sourcesManager, triggerStore, true)
+			a.triggerUploadHandler(resp, req)
+			require.Equal(t, http.StatusOK, resp.Code)
+			_, ok := triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+			require.True(t, ok)
+			_, ok = triggerStore.Load("POSTGRES:test_source_id:second_destination")
+			require.False(t, ok)
+			_, ok = triggerStore.Load("POSTGRES:second_source:test_destination_id")
+			require.False(t, ok)
+			triggerStore.Delete("POSTGRES:test_source_id:test_destination_id")
+			req = httptest.NewRequest(http.MethodPost, "/v1/warehouse/trigger-upload", bytes.NewBufferString(`{"source_id":"test_source_id","destination_id":"unused_test_destination_id"}`))
+			resp = httptest.NewRecorder()
+			a.triggerUploadHandler(resp, req)
+			require.Equal(t, http.StatusBadRequest, resp.Code)
+			_, ok = triggerStore.Load("POSTGRES:test_source_id:test_destination_id")
+			require.False(t, ok)
 		})
 	})
 

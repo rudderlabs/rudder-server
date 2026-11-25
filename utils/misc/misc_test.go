@@ -975,3 +975,51 @@ func TestGetMurmurHash(t *testing.T) {
 		})
 	}
 }
+
+func TestAlibabaOSSDirectoryPath(t *testing.T) {
+	for directoryPath, want := range map[string][2]string{
+		"customer-bucket":        {"customer-bucket", ""},
+		"customer-bucket/rudder": {"customer-bucket", "rudder"},
+		"customer-bucket/a/b/":   {"customer-bucket", "a/b"},
+		"/customer-bucket/a":     {"customer-bucket", "a"},
+		"customer-bucket//a//":   {"customer-bucket", "a"},
+	} {
+		got := GetObjectStorageConfig(ObjectStorageOptsT{Provider: "ALIBABA_OSS", Config: map[string]any{"directoryPath": directoryPath, "region": "cn-hangzhou"}})
+		require.Equal(t, want[0], got["bucketName"], directoryPath)
+		require.Equal(t, want[1], got["prefix"], directoryPath)
+	}
+}
+
+func TestAlibabaOSSConfigConversion(t *testing.T) {
+	for _, role := range []bool{false, true} {
+		for _, rudder := range []bool{false, true} {
+			t.Run(fmt.Sprintf("role=%t/rudder=%t", role, rudder), func(t *testing.T) {
+				source := map[string]any{"directoryPath": "customer-bucket/scoped/", "bucketName": "ignored", "prefix": "ignored", "region": "cn-hangzhou", "ossRoleArn": "oss-role", "externalID": "untrusted", "endPoint": "untrusted"}
+				if role {
+					source["iamRoleARN"] = "odps-role"
+				} else {
+					source["accessKeyId"], source["accessKeySecret"] = "id", "secret"
+				}
+				got := GetObjectStorageConfig(ObjectStorageOptsT{Provider: "ALIBABA_OSS", Config: source, WorkspaceID: "workspace-id", UseRudderStorage: rudder})
+				require.Equal(t, "customer-bucket", got["bucketName"])
+				require.Equal(t, "scoped", got["prefix"])
+				require.Equal(t, "cn-hangzhou", got["region"])
+				require.NotContains(t, got, "endPoint")
+				require.NotContains(t, got, "useInternalEndpoint")
+				require.Equal(t, role, got["roleBasedAuth"])
+				if role {
+					require.Equal(t, "odps-role", got["iamRoleARN"])
+					require.Equal(t, "workspace-id", got["externalID"])
+				} else {
+					require.Equal(t, "id", got["accessKeyID"])
+					require.Equal(t, "secret", got["accessKey"])
+					require.NotContains(t, got, "externalID")
+					require.NotContains(t, got, "iamRoleARN")
+				}
+				require.NotContains(t, got, "ossRoleArn")
+				require.Equal(t, "untrusted", source["externalID"])
+				require.Equal(t, "untrusted", source["endPoint"])
+			})
+		}
+	}
+}

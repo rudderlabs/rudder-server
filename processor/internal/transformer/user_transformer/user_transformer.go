@@ -60,6 +60,10 @@ const (
 // explicitly instead of it being forwarded to a malformed URL.
 var ErrEmptyForwardBaseURL = errors.New("pyt base URL is empty")
 
+// ErrPythonTransformationsNotSupported is the error set on every event aborted because the deployment does not offer
+// Python transformations.
+var ErrPythonTransformationsNotSupported = errors.New("python transformations are not supported")
+
 // DefaultPerWorkspacePyTURLTemplate is the default value of
 // Processor.UserTransformer.perWorkspacePyTURLTemplate; {workspaceID} is
 // replaced by the lowercased workspace ID (see [PerWorkspacePyTBaseURL]).
@@ -119,6 +123,9 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	}, handle.config.pytClientIdleTimeout)
 	handle.config.userTransformationURL = handle.conf.GetStringVar(handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"), "USER_TRANSFORM_URL")
 	handle.config.perWorkspacePyTEnabled = handle.conf.GetReloadableBoolVar(false, "Processor.UserTransformer.perWorkspacePyTEnabled")
+	handle.config.pythonTransformationsEnabled = handle.conf.GetReloadableBoolVar(
+		true, "Processor.UserTransformer.pythonTransformationsEnabled",
+	)
 	handle.config.perWorkspacePyTURLTemplate = handle.conf.GetStringVar(DefaultPerWorkspacePyTURLTemplate, "Processor.UserTransformer.perWorkspacePyTURLTemplate")
 	handle.config.perWorkspacePyTEndlessRetries = handle.conf.GetReloadableBoolVar(true, "Processor.UserTransformer.perWorkspacePyTEndlessRetries")
 	handle.config.timeoutDuration = conf.GetDurationVar(600, time.Second, "HttpClient.procTransformer.timeout")
@@ -154,6 +161,7 @@ type Client struct {
 		collectInstanceLevelStats     bool
 		batchSize                     config.ValueLoader[int]
 		perWorkspacePyTEnabled        config.ValueLoader[bool]
+		pythonTransformationsEnabled  config.ValueLoader[bool]
 		perWorkspacePyTURLTemplate    string
 		perWorkspacePyTEndlessRetries config.ValueLoader[bool]
 		pytClientIdleTimeout          config.ValueLoader[time.Duration]
@@ -174,6 +182,11 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	batchSize := u.config.batchSize.Load()
 	transformationLanguage, _, transformationID := transformerutils.GetTransformationInfo(clientEvents)
 	workspaceID := clientEvents[0].Metadata.WorkspaceID
+	// Before userTransformURL, which panics on Python when per-workspace PyT is off or the workspace ID is empty:
+	// a deployment that does not offer Python must abort the jobs whatever the routing flags say.
+	if transformerutils.IsPythonLanguage(transformationLanguage) && !u.config.pythonTransformationsEnabled.Load() {
+		return u.abortPythonTransformation(clientEvents, workspaceID, transformationID)
+	}
 	userURL := u.userTransformURL(transformationLanguage, workspaceID)
 
 	labels := types.TransformerMetricLabels{
@@ -251,6 +264,28 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		Events:       outClientEvents,
 		FailedEvents: failedEvents,
 	}
+}
+
+// abortPythonTransformation fails every event without calling any transformer, so the processor aborts the jobs.
+// It is only used when Processor.UserTransformer.pythonTransformationsEnabled is false.
+func (u *Client) abortPythonTransformation(
+	clientEvents []types.TransformerEvent,
+	workspaceID, transformationID string,
+) types.Response {
+	u.log.Errorn("Aborting python transformation: python transformations are disabled on this deployment",
+		obskit.WorkspaceID(workspaceID),
+		logger.NewStringField("transformationId", transformationID),
+		obskit.DestinationID(clientEvents[0].Destination.ID),
+		logger.NewIntField("events", int64(len(clientEvents))),
+	)
+	failedEvents := lo.Map(clientEvents, func(event types.TransformerEvent, _ int) types.TransformerResponse {
+		return types.TransformerResponse{
+			StatusCode: http.StatusBadRequest,
+			Error:      ErrPythonTransformationsNotSupported.Error(),
+			Metadata:   event.Metadata,
+		}
+	})
+	return types.Response{FailedEvents: failedEvents}
 }
 
 func (u *Client) sendBatch(

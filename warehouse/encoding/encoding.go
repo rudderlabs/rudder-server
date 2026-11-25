@@ -3,8 +3,11 @@ package encoding
 import (
 	"io"
 	"os"
+	"sync"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -12,25 +15,46 @@ import (
 )
 
 const (
-	UUIDTsColumn     = "uuid_ts"
-	LoadedAtColumn   = "loaded_at"
-	BQLoadedAtFormat = "2006-01-02 15:04:05.999999 Z"
-	BQUuidTSFormat   = "2006-01-02 15:04:05 Z"
+	defaultParquetPageSize = 8 * bytesize.KB
+	minParquetPageSize     = 4 * bytesize.KB
+	maxParquetPageSize     = 8 * bytesize.MB
+
+	UUIDTsColumn           = "uuid_ts"
+	LoadedAtColumn         = "loaded_at"
+	MaxComputeTimeFormat   = "2006-01-02 15:04:05.999999"
+	MaxComputeUUIDTsFormat = "2006-01-02 15:04:05"
+	BQLoadedAtFormat       = "2006-01-02 15:04:05.999999 Z"
+	BQUuidTSFormat         = "2006-01-02 15:04:05 Z"
 )
 
 type Factory struct {
-	config struct {
+	logger                 logger.Logger
+	warnedInvalidPageSizes sync.Map
+	config                 struct {
 		maxStagingFileReadBufferCapacityInK int
 		parquetParallelWriters              config.ValueLoader[int64]
+		parquetPageSize                     config.ValueLoader[int64]
 		disableParquetColumnIndex           config.ValueLoader[bool]
 	}
 }
 
-func NewFactory(conf *config.Config) *Factory {
-	m := &Factory{}
+type FactoryOption func(*Factory)
+
+func WithLogger(log logger.Logger) FactoryOption {
+	return func(m *Factory) {
+		m.logger = log.Child("encoding")
+	}
+}
+
+func NewFactory(conf *config.Config, opts ...FactoryOption) *Factory {
+	m := &Factory{logger: logger.NOP}
+	for _, opt := range opts {
+		opt(m)
+	}
 
 	m.config.maxStagingFileReadBufferCapacityInK = conf.GetIntVar(10240, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 	m.config.parquetParallelWriters = conf.GetReloadableInt64Var(8, 1, "Warehouse.parquetParallelWriters")
+	m.config.parquetPageSize = conf.GetReloadableInt64Var(defaultParquetPageSize, 1, "Warehouse.parquetPageSize")
 	m.config.disableParquetColumnIndex = conf.GetReloadableBoolVar(true, "Warehouse.disableParquetColumnIndex")
 	return m
 }
@@ -47,7 +71,14 @@ type LoadFileWriter interface {
 func (m *Factory) NewLoadFileWriter(loadFileType, outputFilePath string, schema model.TableSchema, destType string) (LoadFileWriter, error) {
 	switch loadFileType {
 	case warehouseutils.LoadFileTypeParquet:
-		return createParquetWriter(outputFilePath, schema, destType, m.config.parquetParallelWriters.Load(), m.config.disableParquetColumnIndex.Load())
+		pageSize := m.config.parquetPageSize.Load()
+		if pageSize < minParquetPageSize || pageSize > maxParquetPageSize {
+			if _, logged := m.warnedInvalidPageSizes.LoadOrStore(pageSize, struct{}{}); !logged {
+				m.logger.Warnn("invalid parquet page size, using default", logger.NewIntField("pageSize", pageSize), logger.NewIntField("defaultPageSize", defaultParquetPageSize))
+			}
+			pageSize = defaultParquetPageSize
+		}
+		return createParquetWriter(outputFilePath, schema, destType, m.config.parquetParallelWriters.Load(), m.config.disableParquetColumnIndex.Load(), pageSize)
 	default:
 		return misc.CreateGZ(outputFilePath)
 	}
@@ -83,7 +114,7 @@ type EventReader interface {
 
 func (m *Factory) NewEventReader(r io.Reader, destType string) EventReader {
 	switch destType {
-	case warehouseutils.BQ:
+	case warehouseutils.BQ, warehouseutils.MAXCOMPUTE:
 		return newJSONReader(r, m.config.maxStagingFileReadBufferCapacityInK)
 	default:
 		return newCsvReader(r)

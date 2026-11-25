@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -41,6 +42,9 @@ type GetQueryParams struct {
 	// status matches stateFilters, with its Consumers field rewritten to exactly those matching consumers
 	// and no per-job status carried. Ignored on single-consumer handles.
 	allPendingConsumers bool
+	// skipBelowJobID skips the sealed datasets whose largest job id is below it, set by the read cursor (see
+	// [NewReadCursor]) to the persisted watermark of the read's pipeline: none of its jobs below it is pending.
+	skipBelowJobID int64
 
 	// query limits
 
@@ -796,7 +800,15 @@ func (jd *Handle) doGetJobs(ctx context.Context, params GetQueryParams, more Mor
 	if jd.conf.dsLimit != nil {
 		dsLimit = jd.conf.dsLimit.Load()
 	}
+	// The ranges are sorted and hold no entry for the last dataset, so the skippable datasets are the
+	// first ones of dsRangeList. A dataset without a range in between is queried, it holds no jobs.
+	skippable := sort.Search(len(dsRangeList), func(i int) bool { return dsRangeList[i].maxJobID >= params.skipBelowJobID })
+	skipped := 0
 	for idx, ds := range dsList {
+		if skipped < skippable && dsRangeList[skipped].ds.Index == ds.Index {
+			skipped++
+			continue
+		}
 		if params.afterJobID != nil {
 			if idx < len(dsRangeList) { // ranges are not stored for the last ds
 				// so the following condition cannot be applied the last ds
@@ -854,6 +866,7 @@ func (jd *Handle) doGetJobs(ctx context.Context, params GetQueryParams, more Mor
 	statTags["query"] = "get"
 	jd.stats.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount) // number of actual ds tables that we queried
 	jd.stats.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)    // number of ds tables that we skipped querying due to noResultsCache
+	jd.stats.NewTaggedStat("jobsdb_cursor_skips", stats.CountType, statTags).Count(skipped)        // number of ds tables that we skipped due to the read cursor
 	if len(res.Jobs) == 0 {
 		jd.stats.NewTaggedStat("jobsdb_queried_no_jobs", stats.CountType, statTags).Increment() // number of times that we queried and got no jobs
 	}

@@ -110,6 +110,7 @@ type Handle struct {
 	datePrefixOverride           config.ValueLoader[string]
 	customDatePrefix             config.ValueLoader[string]
 	maxImportingQueryIterations  config.ValueLoader[int]
+	writeImportIDRefs            config.ValueLoader[bool]
 
 	drainer routerutils.Drainer
 
@@ -149,11 +150,6 @@ type Handle struct {
 
 	asyncDestinationStruct map[string]*asynccommon.AsyncDestinationStruct
 
-	asyncPollTimeStat           stats.Measurement
-	asyncFailedJobsTimeStat     stats.Measurement
-	asyncSuccessfulJobCount     stats.Measurement
-	asyncFailedJobCount         stats.Measurement
-	asyncAbortedJobCount        stats.Measurement
 	asyncGetImportingIterations stats.Measurement
 }
 
@@ -509,7 +505,7 @@ func (brt *Handle) resolveDatePrefixOverride(workspaceID, destinationID string) 
 }
 
 // pingWarehouse notifies the warehouse about a new data upload (staging files)
-func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (err error) {
+func (brt *Handle) pingWarehouse(ctx context.Context, batchJobs *BatchedJobs, output UploadResult) (err error) {
 	schemaMap := brt.generateSchemaMap(batchJobs)
 	var sampleParameters routerutils.JobParameters
 	err = jsonrs.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
@@ -540,7 +536,7 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 		payload.TimeWindow = batchJobs.TimeWindow
 	}
 
-	err = brt.warehouseClient.Process(context.TODO(), payload)
+	err = brt.warehouseClient.Process(ctx, payload)
 	if err != nil {
 		brt.logger.Errorn("BRT: Failed to route staging file", obskit.Error(err))
 		return err

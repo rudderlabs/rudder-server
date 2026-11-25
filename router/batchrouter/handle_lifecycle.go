@@ -215,6 +215,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")
 	brt.customDatePrefix = config.GetReloadableStringVar("", "BatchRouter.customDatePrefix")
 	brt.maxImportingQueryIterations = config.GetReloadableIntVar(100, 1, "BatchRouter."+brt.destType+".maxImportingQueryIterations", "BatchRouter.maxImportingQueryIterations")
+	brt.writeImportIDRefs = config.GetReloadableBoolVar(false, "BatchRouter."+brt.destType+".writeImportIdRefs", "BatchRouter.writeImportIdRefs")
 }
 
 func (brt *Handle) startAsyncDestinationManager() {
@@ -222,11 +223,6 @@ func (brt *Handle) startAsyncDestinationManager() {
 		"module":   "batch_router",
 		"destType": brt.destType,
 	}
-	brt.asyncPollTimeStat = stats.Default.NewTaggedStat("async_poll_time", stats.TimerType, asyncStatTags)
-	brt.asyncFailedJobsTimeStat = stats.Default.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, asyncStatTags)
-	brt.asyncSuccessfulJobCount = stats.Default.NewTaggedStat("async_successful_job_count", stats.CountType, asyncStatTags)
-	brt.asyncFailedJobCount = stats.Default.NewTaggedStat("async_failed_job_count", stats.CountType, asyncStatTags)
-	brt.asyncAbortedJobCount = stats.Default.NewTaggedStat("async_aborted_job_count", stats.CountType, asyncStatTags)
 	brt.asyncGetImportingIterations = stats.Default.NewTaggedStat("async_get_importing_iterations", stats.HistogramType, asyncStatTags)
 
 	brt.asyncDestinationStruct = make(map[string]*asynccommon.AsyncDestinationStruct)
@@ -271,7 +267,8 @@ func (brt *Handle) shouldRetryInvalidManager(invalidManager *asynccommon.Invalid
 	return brt.now().Sub(invalidManager.FailedAt) >= brt.invalidManagerRetryInterval.Load()
 }
 
-func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
+// newAsyncDestinationManager creates the manager of an async destination, or an invalid manager if it can't be created
+func (brt *Handle) newAsyncDestinationManager(destination *backendconfig.DestinationT) asynccommon.AsyncDestinationManager {
 	manager, err := brt.asyncManagerFactory(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig, &brt.secretVersions)
 	if err != nil {
 		brt.logger.Errorn("BRT: Error initializing async destination struct", obskit.DestinationType(destination.Name), obskit.Error(err))
@@ -280,11 +277,16 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 			"destType": destination.DestinationDefinition.Name,
 		})
 		destInitFailStat.Count(1)
-		manager = &asynccommon.InvalidManager{
+		return &asynccommon.InvalidManager{
 			Error:    fmt.Errorf("%s initialization failed with error: %v", destination.Name, err),
 			FailedAt: brt.now(),
 		}
 	}
+	return manager
+}
+
+func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
+	manager := brt.newAsyncDestinationManager(destination)
 	_, ok := brt.asyncDestinationStruct[destination.ID]
 	if !ok {
 		brt.asyncDestinationStruct[destination.ID] = &asynccommon.AsyncDestinationStruct{}

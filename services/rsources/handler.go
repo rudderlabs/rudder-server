@@ -217,17 +217,7 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 		return JobFailedRecordsV2{ID: jobRunId}, fmt.Errorf("failed to get failed record ids: %w", err)
 	}
 
-	filters := "WHERE r.id = ANY($1)"
-	params := []any{pq.Array(ids)}
-	var limit string
-	if paging.Size > 0 {
-		// row-value comparison: everything strictly after the cursor in (id, record_id) order
-		filters = filters + fmt.Sprintf(` AND (r.id, r.record_id) > ($%[1]d, $%[2]d)`, len(params)+1, len(params)+2)
-		params = append(params, nextPageToken.ID, nextPageToken.RecordID)
-		limit = fmt.Sprintf(`LIMIT %d`, paging.Size)
-	}
-	sqlStatement := fmt.Sprintf(
-		`SELECT
+	const selectFrom = `SELECT
 			k.task_run_id,
 			k.source_id,
 			k.destination_id,
@@ -236,9 +226,38 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			r.code,
 			r.error_response
 		FROM "rsources_failed_keys_v2_records" r
-		JOIN "rsources_failed_keys_v2" k ON r.id = k.id %[1]s
-		ORDER BY r.id, r.record_id ASC %[2]s`,
-		filters, limit)
+		JOIN "rsources_failed_keys_v2" k ON r.id = k.id`
+	var sqlStatement string
+	var params []any
+	var limit string
+	if paging.Size > 0 {
+		// Everything strictly after the cursor in (id, record_id) order, split in two:
+		// the rest of the cursor's id and all later ids. A single row-value comparison with
+		// r.id = ANY(...) makes the index scan start at the beginning of the cursor's id,
+		// so each page would read every record before the cursor.
+		// $2 = ANY($1) keeps a page token from reading records outside the job run.
+		var laterIDs []string
+		for _, id := range ids {
+			if id > nextPageToken.ID { // bytewise, matching the COLLATE "C" of id
+				laterIDs = append(laterIDs, id)
+			}
+		}
+		limit = fmt.Sprintf(`LIMIT %d`, paging.Size)
+		sqlStatement = fmt.Sprintf(
+			`(%[1]s
+			WHERE r.id = $2 AND $2 = ANY($1) AND r.record_id > $3
+			ORDER BY r.record_id %[2]s)
+			UNION ALL
+			(%[1]s
+			WHERE r.id = ANY($4)
+			ORDER BY r.id, r.record_id %[2]s)
+			ORDER BY 4, 5 %[2]s`,
+			selectFrom, limit)
+		params = []any{pq.Array(ids), nextPageToken.ID, nextPageToken.RecordID, pq.Array(laterIDs)}
+	} else {
+		sqlStatement = selectFrom + ` WHERE r.id = ANY($1) ORDER BY r.id, r.record_id ASC`
+		params = []any{pq.Array(ids)}
+	}
 
 	failedRecordsMap := map[JobTargetKey][]FailedRecord{}
 	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, params...)
@@ -547,16 +566,37 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string,
 			return err
 		}
 	}
-	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2_records add column if not exists code numeric(4) not null default 0`); err != nil {
+	if err := addColumnIfMissing(ctx, db, "rsources_failed_keys_v2_records", "code", "numeric(4) not null default 0"); err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2_records add column if not exists error_response text not null default ''`); err != nil {
+	if err := addColumnIfMissing(ctx, db, "rsources_failed_keys_v2_records", "error_response", "text not null default ''"); err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx, `alter table rsources_failed_keys_v2 add column if not exists ts timestamp not null default now()`); err != nil {
+	if err := addColumnIfMissing(ctx, db, "rsources_failed_keys_v2", "ts", "timestamp not null default now()"); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+// addColumnIfMissing runs the ALTER TABLE only when the column is not in the catalog yet.
+// "add column if not exists" alone is not enough: it takes an ACCESS EXCLUSIVE lock even when the
+// column exists, so on every startup it waits behind any long-running query on the table and,
+// while waiting, blocks every query that comes after it.
+func addColumnIfMissing(ctx context.Context, db *sql.DB, table, column, definition string) error {
+	var exists bool
+	if err := db.QueryRowContext(ctx, `select exists (
+		select 1 from information_schema.columns
+		where table_schema = current_schema() and table_name = $1 and column_name = $2
+	)`, table, column).Scan(&exists); err != nil {
+		return fmt.Errorf("checking if column %s.%s exists: %w", table, column, err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`alter table %s add column if not exists %s %s`, pq.QuoteIdentifier(table), pq.QuoteIdentifier(column), definition)); err != nil {
+		return fmt.Errorf("adding column %s.%s: %w", table, column, err)
+	}
 	return nil
 }
 
@@ -580,6 +620,15 @@ func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string, log 
 		} else {
 			return err
 		}
+	}
+	// "create index if not exists" takes a SHARE lock on the table before it checks the name, so it
+	// waits behind any open write transaction on rsources_stats even when the index exists.
+	var indexExists bool
+	if err := db.QueryRowContext(ctx, `select to_regclass('rsources_stats_job_run_id_idx') is not null`).Scan(&indexExists); err != nil {
+		return fmt.Errorf("checking if index rsources_stats_job_run_id_idx exists: %w", err)
+	}
+	if indexExists {
+		return nil
 	}
 	if _, err := db.ExecContext(ctx, `create index if not exists rsources_stats_job_run_id_idx on "rsources_stats" (job_run_id)`); err != nil {
 		return err

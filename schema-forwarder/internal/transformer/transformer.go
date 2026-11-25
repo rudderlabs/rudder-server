@@ -28,12 +28,14 @@ type Transformer interface {
 }
 
 // New returns a new instance of Schema Transformer
-func New(backendConfig backendconfig.BackendConfig, config *config.Config) Transformer {
+func New(backendConfig backendconfig.BackendConfig, conf *config.Config) Transformer {
 	return &transformer{
-		backendConfig:        backendConfig,
-		captureNilAsUnknowns: config.GetBoolVar(false, "EventSchemas.captureUnknowns"),
-		keysLimit:            config.GetIntVar(500, 1, "EventSchemas.keysLimit"),
-		identifierLimit:      config.GetIntVar(100, 1, "EventSchemas.identifierLimit"),
+		backendConfig:             backendConfig,
+		conf:                      conf,
+		captureNilAsUnknowns:      conf.GetBoolVar(false, "EventSchemas.captureUnknowns"),
+		keysLimit:                 conf.GetIntVar(500, 1, "EventSchemas.keysLimit"),
+		identifierLimit:           conf.GetIntVar(100, 1, "EventSchemas.identifierLimit"),
+		collapseArrayIndicesCache: make(map[string]*config.Reloadable[bool]),
 	}
 }
 
@@ -80,7 +82,7 @@ func (st *transformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, s
 	if st.identifierLimit > 0 && len(schemaKey.EventIdentifier) > st.identifierLimit {
 		return nil, "", fmt.Errorf("event identifier size is greater than %d", st.identifierLimit)
 	}
-	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload, []byte("{}"), job.WorkspaceId, job.CreatedAt)
+	schemaMessage, err := st.getSchemaMessage(schemaKey, sourceID, eventPayload, []byte("{}"), job.WorkspaceId, job.CreatedAt)
 	if err != nil {
 		return nil, "", err
 	}
@@ -142,8 +144,8 @@ func (st *transformer) getEventIdentifier(event map[string]any, eventType string
 }
 
 // getSchemaMessage returns the schema message from the event by flattening the event and getting the schema
-func (st *transformer) getSchemaMessage(key *proto.EventSchemaKey, event map[string]any, sample json.RawMessage, workspaceId string, observedAt time.Time) (*proto.EventSchemaMessage, error) {
-	flattenedEvent, err := st.flattenEvent(event)
+func (st *transformer) getSchemaMessage(key *proto.EventSchemaKey, sourceID string, event map[string]any, sample json.RawMessage, workspaceId string, observedAt time.Time) (*proto.EventSchemaMessage, error) {
+	flattenedEvent, err := st.flattenEvent(sourceID, event)
 	if err != nil {
 		return nil, err
 	}
@@ -179,12 +181,65 @@ func (st *transformer) getSchema(flattenedEvent map[string]any) map[string]strin
 }
 
 // flattenEvent flattens the event
-func (st *transformer) flattenEvent(event map[string]any) (map[string]any, error) {
+func (st *transformer) flattenEvent(sourceID string, event map[string]any) (map[string]any, error) {
+	if st.collapseArrayIndices(sourceID).Load() {
+		return flattenCollapsingArrayIndices(event), nil
+	}
 	flattenedEvent, err := flatten.Flatten(event, "", flatten.DotStyle)
 	if err != nil {
 		return nil, err
 	}
 	return flattenedEvent, nil
+}
+
+// collapseArrayIndices returns the reloadable setting controlling whether array indices in schema keys are
+// written as 0 for the given source. The setting is resolved hierarchically, the first key that is set wins, and
+// the resulting reloadable is cached per source id:
+//
+//	SchemaForwarder.<source-id>.collapseArrayIndices
+//	SchemaForwarder.collapseArrayIndices
+func (st *transformer) collapseArrayIndices(sourceID string) *config.Reloadable[bool] {
+	if setting, ok := st.collapseArrayIndicesCache[sourceID]; ok {
+		return setting
+	}
+	setting := st.conf.GetReloadableBoolVar(false,
+		"SchemaForwarder."+sourceID+".collapseArrayIndices",
+		"SchemaForwarder.collapseArrayIndices",
+	)
+	st.collapseArrayIndicesCache[sourceID] = setting
+	return setting
+}
+
+// flattenCollapsingArrayIndices flattens the event like flatten.Flatten with flatten.DotStyle, except that every
+// array index in a key is written as 0. When several values map to the same key, the first non-nil one is kept:
+// array elements in array order, and a dotted map key colliding with a collapsed array key in map order.
+//
+// Indices are collapsed while flattening because in a flattened key an array index and a numeric map key look
+// the same, and only array indices may be collapsed.
+func flattenCollapsingArrayIndices(event map[string]any) map[string]any {
+	flattened := make(map[string]any)
+	var add func(key string, v any)
+	add = func(key string, v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			for k, e := range v {
+				add(key+"."+k, e)
+			}
+		case []any:
+			key += ".0"
+			for _, e := range v {
+				add(key, e)
+			}
+		default:
+			if cur, ok := flattened[key]; !ok || cur == nil {
+				flattened[key] = v
+			}
+		}
+	}
+	for k, v := range event {
+		add(k, v)
+	}
+	return flattened
 }
 
 // disablePIIReporting returns whether PII reporting is disabled for the write key

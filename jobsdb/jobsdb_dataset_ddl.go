@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -183,6 +184,16 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		parameters JSONB DEFAULT '{}'::JSONB,
 		consumer TEXT NOT NULL DEFAULT '') `+dsAutovacuumOptions+`;`, newDS.JobStatusTable)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobStatusTable, err)
+	}
+
+	// A status table analyzed while it holds few jobs with many retries keeps a low n_distinct as it grows.
+	// The planner then expects thousands of rows per job and resolves each job's latest status by walking
+	// the id index backwards. A fixed ratio keeps the estimate valid at any table size.
+	if nDistinct := jd.conf.statusJobIDNDistinct.Load(); nDistinct >= -1 && nDistinct < 0 {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %q ALTER COLUMN job_id SET (n_distinct = %s)`,
+			newDS.JobStatusTable, strconv.FormatFloat(nDistinct, 'f', -1, 64))); err != nil {
+			return fmt.Errorf("setting job_id n_distinct of %s: %w", newDS.JobStatusTable, err)
+		}
 	}
 
 	if jd.conf.multiConsumer {

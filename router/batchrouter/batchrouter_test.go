@@ -504,7 +504,7 @@ func TestPostToWarehouse(t *testing.T) {
 				},
 				Connection: &Connection{},
 			}
-			err := job.pingWarehouse(&batchJobs, UploadResult{
+			err := job.pingWarehouse(context.Background(), &batchJobs, UploadResult{
 				TotalEvents: 1,
 				TotalBytes:  200,
 				BytesPerTable: map[string]int64{
@@ -518,6 +518,36 @@ func TestPostToWarehouse(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("should stop waiting for the warehouse when the context is cancelled", func(t *testing.T) {
+		requestReceived := make(chan struct{})
+		unblock := make(chan struct{})
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			close(requestReceived)
+			<-unblock
+		}))
+		t.Cleanup(ts.Close)
+		defer close(unblock)
+
+		brt := Handle{
+			logger:                  logger.NOP,
+			warehouseClient:         client.NewWarehouse(ts.URL, stats.NOP, client.WithTimeout(time.Minute)),
+			schemaGenerationWorkers: config.GetReloadableIntVar(4, 1, "BatchRouter.processingWorkers"),
+			conf:                    config.New(),
+		}
+		batchJobs := BatchedJobs{
+			Jobs:       []*jobsdb.JobT{{EventPayload: jsonb.RawMessage(`{}`), Parameters: jsonb.RawMessage(`{}`)}},
+			Connection: &Connection{},
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			<-requestReceived
+			cancel()
+		}()
+		err := brt.pingWarehouse(ctx, &batchJobs, UploadResult{})
+		require.ErrorIs(t, err, context.Canceled)
+	})
 }
 
 func TestBatchRouter(t *testing.T) {

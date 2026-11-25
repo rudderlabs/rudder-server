@@ -4,6 +4,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 )
 
+// limiterTimers match the timers of every limiter.
+var limiterTimers = []string{"*_limiter_waiting", "*_limiter_sleeping", "*_limiter_working"}
+
 var (
 	defaultHistogramBuckets = []float64{
 		0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60, 300, 600, // 2ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s, 30s, 1m, 5m
@@ -68,6 +71,9 @@ var (
 		},
 	}
 
+	deliveryCompressionSizeBuckets = []float64{
+		64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 65536, 262144, 1048576, 4194304, 16777216, 52428800,
+	}
 	customBuckets = map[string][]float64{
 		"db_wait_duration": {
 			0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60, 300, 600, 1800, 3600, 7200, 10800, 21600, 32400, 86400, // 2ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s, 1m, 5m, 10m, 30m, 1h, 2h, 3h, 6h, 9h, 24h
@@ -173,6 +179,11 @@ var (
 		"router_delivery_payload_size_bytes": {
 			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
 			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
+		},
+		"router_delivery_compressed_payload_size_bytes":   deliveryCompressionSizeBuckets,
+		"router_delivery_uncompressed_payload_size_bytes": deliveryCompressionSizeBuckets,
+		"router_delivery_compression_duration_seconds": {
+			0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10,
 		},
 		"snowpipe_streaming_request_body_size": {
 			float64(10 * bytesize.B), float64(100 * bytesize.B),

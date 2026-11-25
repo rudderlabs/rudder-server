@@ -199,6 +199,7 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 	case IsObjectStorageDestination(pw.brt.destType):
 		processObjectStorageUpload(pw.brt.destType, false)
 	case IsWarehouseDestination(pw.brt.destType):
+		ctx := pw.brt.backgroundCtx
 		useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchedJobs.Connection.Destination.Config)
 		objectStorageType := warehouseutils.ObjectStorageType(pw.brt.destType, batchedJobs.Connection.Destination.Config, useRudderStorage)
 		splitBatchJobs := pw.brt.splitBatchJobsOnTimeWindow(batchedJobs)
@@ -206,7 +207,14 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 			output := pw.brt.upload(objectStorageType, batchJob, true)
 			notifyWarehouseErr := false
 			if output.Error == nil && output.Key != "" {
-				output.Error = pw.brt.pingWarehouse(batchJob, output)
+				output.Error = pw.brt.pingWarehouse(ctx, batchJob, output)
+				if output.Error != nil && ctx.Err() != nil {
+					// Shutting down: the jobs of this and the remaining batches stay in executing state
+					// and are retried after restart. Recording a failure would count towards
+					// warehouseServiceMaxRetryTime and could abort them.
+					misc.RemoveFilePaths(output.LocalFilePaths...)
+					return
+				}
 				if output.Error != nil {
 					notifyWarehouseErr = true
 				}

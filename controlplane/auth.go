@@ -3,6 +3,8 @@ package controlplane
 import (
 	"context"
 
+	"github.com/rudderlabs/rudder-cp-sdk/tokenfile"
+
 	proto "github.com/rudderlabs/rudder-server/proto/common"
 )
 
@@ -12,6 +14,9 @@ type AuthInfo struct {
 	InstanceID      string
 	TokenType       string
 	Labels          map[string]string
+	// IdentityToken is sent on each handshake via Get, which re-reads the file once the cached token is 10 s old.
+	// Nil means send none.
+	IdentityToken *tokenfile.Token
 }
 
 type authService struct {
@@ -29,16 +34,18 @@ func (a *authService) GetConnectionToken(_ context.Context, _ *proto.GetConnecti
 			},
 		}, nil
 	}
+	success := &proto.GetConnectionTokenSuccessResponse{
+		ConnectionToken: a.authInfo.ConnectionToken,
+		Service:         a.authInfo.Service,
+		InstanceID:      a.authInfo.InstanceID,
+		TokenType:       a.authInfo.TokenType,
+		Labels:          a.authInfo.Labels,
+	}
+	if a.authInfo.IdentityToken != nil {
+		success.IdentityToken = a.authInfo.IdentityToken.Get()
+	}
 	return &proto.GetConnectionTokenResponse{
-		Response: &proto.GetConnectionTokenResponse_SuccessResponse{
-			SuccessResponse: &proto.GetConnectionTokenSuccessResponse{
-				ConnectionToken: a.authInfo.ConnectionToken,
-				Service:         a.authInfo.Service,
-				InstanceID:      a.authInfo.InstanceID,
-				TokenType:       a.authInfo.TokenType,
-				Labels:          a.authInfo.Labels,
-			},
-		},
+		Response: &proto.GetConnectionTokenResponse_SuccessResponse{SuccessResponse: success},
 	}, nil
 }
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -87,6 +88,9 @@ func TestSendPostWithGzipData(t *testing.T) {
 		resp := network.SendPost(context.Background(), structData)
 		require.Equal(r, resp.StatusCode, http.StatusOK)
 		require.Equal(r, string(resp.ResponseBody), eventData)
+		require.Equal(r, len(eventData), resp.UncompressedPayloadSize)
+		require.Positive(r, resp.CompressedPayloadSize)
+		require.Positive(r, resp.CompressionDuration)
 	})
 
 	t.Run("should fail to send Gzip data when payload is missing", func(r *testing.T) {
@@ -110,6 +114,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 		resp := network.SendPost(context.Background(), structData)
 		require.Equal(r, resp.StatusCode, http.StatusBadRequest)
 		require.Equal(r, resp.ResponseBody, []byte("400 Unable to parse json list. Unexpected transformer response"))
+		require.Zero(r, resp.CompressedPayloadSize)
+		require.Zero(r, resp.CompressionDuration)
 	})
 
 	t.Run("should send error with invalid body", func(r *testing.T) {
@@ -183,6 +189,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 		resp := network.SendPost(context.Background(), structData)
 		require.Equal(r, resp.StatusCode, http.StatusOK)
 		require.Equal(r, resp.ResponseBody, []byte(""))
+		require.Zero(r, resp.CompressedPayloadSize)
+		require.Zero(r, resp.CompressionDuration)
 	})
 
 	t.Run("should fail when gzip compression fails", func(r *testing.T) {
@@ -204,6 +212,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 		resp := network.SendPost(context.Background(), structData)
 		require.Equal(r, resp.StatusCode, http.StatusBadRequest)
 		require.Contains(r, string(resp.ResponseBody), "Unable to parse json list")
+		require.Zero(r, resp.CompressedPayloadSize)
+		require.Zero(r, resp.CompressionDuration)
 	})
 
 	t.Run("should handle empty gzip payload", func(r *testing.T) {
@@ -243,6 +253,9 @@ func TestSendPostWithGzipData(t *testing.T) {
 		resp := network.SendPost(context.Background(), structData)
 		require.Equal(r, resp.StatusCode, http.StatusOK)
 		require.Equal(r, string(resp.ResponseBody), "")
+		require.Zero(r, resp.UncompressedPayloadSize)
+		require.Positive(r, resp.CompressedPayloadSize)
+		require.Positive(r, resp.CompressionDuration)
 	})
 
 	t.Run("should handle gzip with custom headers", func(r *testing.T) {
@@ -291,7 +304,58 @@ func TestSendPostWithGzipData(t *testing.T) {
 		resp := network.SendPost(context.Background(), structData)
 		require.Equal(r, resp.StatusCode, http.StatusOK)
 		require.Equal(r, string(resp.ResponseBody), eventData)
+		require.Equal(r, len(eventData), resp.UncompressedPayloadSize)
+		require.Positive(r, resp.CompressedPayloadSize)
+		require.Positive(r, resp.CompressionDuration)
 	})
+}
+
+func TestSendPostGZIPMeasurementsOnHTTPFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		client func(*http.Request) (*http.Response, error)
+		status int
+	}{
+		{"request construction", nil, http.StatusBadRequest},
+		{"blocked address", func(*http.Request) (*http.Response, error) { return nil, ErrDenyPrivateIP }, http.StatusForbidden},
+		{"request error", func(*http.Request) (*http.Response, error) { return nil, context.Canceled }, http.StatusGatewayTimeout},
+		{"response read error", func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(iotest.ErrReader(io.ErrUnexpectedEOF))}, nil
+		}, http.StatusBadGateway},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			network := &netHandle{logger: logger.NOP}
+			url := "https://example.com"
+			if tc.client == nil {
+				url = "http://[::1]:namedport"
+			} else {
+				client := mocksSysUtils.NewMockHTTPClientI(gomock.NewController(t))
+				client.EXPECT().Do(gomock.Any()).DoAndReturn(tc.client)
+				network.httpClient = client
+			}
+			resp := network.SendPost(t.Context(), integrations.PostParametersT{
+				Type: "REST", URL: url, RequestMethod: http.MethodPost,
+				Body: map[string]any{"GZIP": map[string]any{"payload": "test payload"}},
+			})
+			require.Equal(t, tc.status, resp.StatusCode)
+			require.Equal(t, len("test payload"), resp.UncompressedPayloadSize)
+			require.Positive(t, resp.CompressedPayloadSize)
+			require.Positive(t, resp.CompressionDuration)
+		})
+	}
+}
+
+func TestSendPostJSONMarshalPanic(t *testing.T) {
+	network := &netHandle{logger: logger.NOP}
+	var panicValue any
+	func() {
+		defer func() { panicValue = recover() }()
+		network.SendPost(t.Context(), integrations.PostParametersT{
+			Type: "REST", RequestMethod: http.MethodPost, URL: "https://example.com",
+			Body: map[string]any{"JSON": map[string]any{"unsupported": make(chan int)}},
+		})
+	}()
+	require.ErrorContains(t, panicValue.(error), "unsupported type")
 }
 
 func TestSendPost(t *testing.T) {
@@ -526,6 +590,8 @@ func TestSendPost(t *testing.T) {
 		resp := network.SendPost(context.Background(), structData)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Equal(t, "OK", string(resp.ResponseBody))
+		require.Zero(t, resp.CompressedPayloadSize)
+		require.Zero(t, resp.CompressionDuration)
 	})
 
 	t.Run("should handle FORM body", func(t *testing.T) {
@@ -562,6 +628,8 @@ func TestSendPost(t *testing.T) {
 		resp := network.SendPost(context.Background(), structData)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Equal(t, "OK", string(resp.ResponseBody))
+		require.Zero(t, resp.CompressedPayloadSize)
+		require.Zero(t, resp.CompressionDuration)
 	})
 }
 

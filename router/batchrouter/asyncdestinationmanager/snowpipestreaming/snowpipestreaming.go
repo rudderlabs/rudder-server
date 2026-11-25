@@ -329,7 +329,25 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 		}
 	}
 
-	m.logger.Infon("Uploaded data to snowpipe streaming destination")
+	var minJobID, maxJobID int64
+	if len(events) > 0 {
+		minJobID, maxJobID = events[0].Metadata.JobID, events[0].Metadata.JobID
+		for _, event := range events[1:] {
+			minJobID = min(minJobID, event.Metadata.JobID)
+			maxJobID = max(maxJobID, event.Metadata.JobID)
+		}
+	}
+	fields := []logger.Field{
+		logger.NewIntField("tables", int64(len(groupedEvents))),
+		logger.NewIntField("events", int64(len(events))),
+		logger.NewIntField("importingJobs", int64(len(importingJobIDs))),
+		logger.NewIntField("failedJobs", int64(len(failedJobIDs))),
+		logger.NewIntField("abortedJobs", int64(len(abortedJobIDs))),
+	}
+	if len(events) > 0 {
+		fields = append(fields, logger.NewIntField("minJobID", minJobID), logger.NewIntField("maxJobID", maxJobID))
+	}
+	m.logger.Infon("Uploaded data to snowpipe streaming destination", fields...)
 
 	m.stats.jobs.importing.Count(len(importingJobIDs))
 	m.stats.jobs.failed.Count(len(failedJobIDs))
@@ -447,13 +465,13 @@ func (m *Manager) sendEventsToSnowpipe(
 		logger.NewIntField("events", int64(len(info.events))),
 		logger.NewStringField("offset", offset),
 	)
-	log.Infon("Sending events to Snowpipe")
+	log.Debugn("Sending events to Snowpipe")
 
 	channelResponse, err := m.initializeChannelWithSchema(ctx, destinationID, destConf, info.tableName, info.eventsSchema)
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating channel %s: %w", info.tableName, err)
 	}
-	log.Infon("Prepared channel", logger.NewStringField("channelID", channelResponse.ChannelID))
+	log.Debugn("Prepared channel", logger.NewStringField("channelID", channelResponse.ChannelID))
 
 	formattedTS := m.Now().Format(misc.RFC3339Milli)
 	var discardInfos []discardInfo
@@ -470,7 +488,7 @@ func (m *Manager) sendEventsToSnowpipe(
 	*/
 	var discardImInfo *importInfo
 	if len(discardInfos) > 0 {
-		log.Infon("Inserting events into discards table", logger.NewIntField("count", int64(len(discardInfos))))
+		log.Debugn("Inserting events into discards table", logger.NewIntField("count", int64(len(discardInfos))))
 		discardImInfo, err = m.sendDiscardEventsToSnowpipe(ctx, offset, info.discardChannelResponse.ChannelID, discardInfos)
 		if err != nil {
 			return nil, nil, fmt.Errorf("sending discard events to Snowpipe: %w", err)
@@ -503,7 +521,7 @@ func (m *Manager) sendEventsToSnowpipe(
 		m.stats.duplicateEventsDueToOffset.Count(duplicateCountDueToOffset)
 	}
 
-	log.Infon("Sent events to Snowpipe")
+	log.Debugn("Sent events to Snowpipe")
 
 	imInfo := &importInfo{
 		ChannelID: channelID,
@@ -692,10 +710,8 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 	var importInfos []*importInfo
 	err := jsonrs.Unmarshal([]byte(pollInput.ImportId), &importInfos)
 	if err != nil {
-		m.logger.Errorn("Failed to unmarshal Snowpipe streaming import ID",
-			logger.NewStringField("importID", pollInput.ImportId),
-			obskit.Error(err),
-		)
+		m.logger.Errorn("Failed to unmarshal Snowpipe streaming import ID", obskit.Error(err))
+		m.logPollSummary(nil, true)
 		return common.PollStatusResponse{
 			InProgress: false,
 			StatusCode: http.StatusBadRequest,
@@ -712,6 +728,7 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 		// Check for stuck pipeline batch
 		if m.pollingStartTime.IsZero() {
 			m.pollingStartTime = m.Now()
+			m.logPollSummary(importInfos, false)
 			return common.PollStatusResponse{InProgress: true}
 		}
 
@@ -720,6 +737,7 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 
 		// Fail events which are still in progress after the threshold
 		if duration <= threshold {
+			m.logPollSummary(importInfos, false)
 			return common.PollStatusResponse{InProgress: true}
 		}
 
@@ -749,7 +767,7 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 			m.logger.Warnn("Stuck snowpipe pipeline detected",
 				logger.NewDurationField("duration", duration),
 				logger.NewDurationField("threshold", threshold),
-				logger.NewStringField("importID", pollInput.ImportId),
+				logger.NewIntField("stuckTables", int64(len(stuckInfos))),
 			)
 			for _, info := range stuckInfos {
 				info.Failed = true
@@ -767,11 +785,56 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 	})
 	m.cleanupFailedImports(ctx, failedImports)
 	m.updateJobStatistics(updatedImportInfos)
+	response := m.buildPollStatusResponse(updatedImportInfos, failedImports)
+	m.logPollSummary(importInfos, false)
 	// Reset batch polling start time since all imports completed
 	m.pollingStartTime = time.Time{}
 	m.polledImportInfoMap = make(map[string]*importInfo)
 
-	return m.buildPollStatusResponse(updatedImportInfos, failedImports)
+	return response
+}
+
+// logPollSummary includes cached terminal results as well as imports checked during this call.
+func (m *Manager) logPollSummary(importInfos []*importInfo, invalidImportID bool) {
+	var committed, inProgress, failed int64
+	var minTableOffset, maxTableOffset int64
+	hasTableOffset := false
+	for _, info := range importInfos {
+		if info == nil {
+			continue
+		}
+		offset, err := strconv.ParseInt(info.Offset, 10, 64)
+		if err == nil {
+			if !hasTableOffset {
+				minTableOffset, maxTableOffset = offset, offset
+				hasTableOffset = true
+			} else {
+				minTableOffset = min(minTableOffset, offset)
+				maxTableOffset = max(maxTableOffset, offset)
+			}
+		}
+		if cached, ok := m.polledImportInfoMap[info.ChannelID]; ok {
+			if cached.Failed {
+				failed++
+			} else {
+				committed++
+			}
+		} else {
+			inProgress++
+		}
+	}
+	fields := []logger.Field{
+		logger.NewIntField("tables", int64(len(importInfos))),
+		logger.NewIntField("committed", committed),
+		logger.NewIntField("inProgress", inProgress),
+		logger.NewIntField("failed", failed),
+		logger.NewBoolField("invalidImportID", invalidImportID),
+	}
+	// An import contains only the latest jobsdb offset per table, not the first job ID in the batch.
+	if hasTableOffset {
+		fields = append(fields, logger.NewIntField("minTableOffset", minTableOffset), logger.NewIntField("maxTableOffset", maxTableOffset))
+	}
+	m.logger.Infon("Polled snowpipe streaming destination", fields...)
 }
 
 // provideInProgressImportInfos provides the import infos that are in progress.
@@ -803,7 +866,7 @@ func isInProgress(statusRes *model.StatusResponse, info *importInfo, log logger.
 
 	// Case 1: All events have been flushed - proceed to next batch
 	if latestCommittedOffset == expectedOffset {
-		log.Infon("All events have been flushed successfully")
+		log.Debugn("All events have been flushed successfully")
 		return false, nil
 	}
 
@@ -909,7 +972,7 @@ func (m *Manager) getNonProcessedImportInfosWithBulkStatus(ctx context.Context, 
 			logger.NewStringField("expectedOffset", info.Offset),
 			logger.NewStringField("table", info.Table),
 		)
-		log.Infon("Resolving status response post bulk status")
+		log.Debugn("Resolving status response post bulk status")
 
 		statusRes, resolveErr := m.resolveStatusResponsePostBulkStatus(ctx, info, statuses, notFoundMap)
 		if resolveErr != nil {

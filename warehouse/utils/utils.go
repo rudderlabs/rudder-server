@@ -51,6 +51,7 @@ const (
 	MSSQL             = "MSSQL"
 	AzureSynapse      = "AZURE_SYNAPSE"
 	MicrosoftFabric   = "MICROSOFT_FABRIC"
+	MAXCOMPUTE        = "MAXCOMPUTE"
 	DELTALAKE         = "DELTALAKE"
 	S3Datalake        = "S3_DATALAKE"
 	GCSDatalake       = "GCS_DATALAKE"
@@ -115,6 +116,7 @@ const (
 	MINIO              = "MINIO"
 	DigitalOceanSpaces = "DIGITAL_OCEAN_SPACES"
 	OneLake            = "ONELAKE"
+	AlibabaOSS         = "ALIBABA_OSS"
 )
 
 // Cloud providers
@@ -131,7 +133,7 @@ var (
 	TimeWindowDestinations = []string{S3Datalake, GCSDatalake, AzureDatalake}
 	awsCredsExpiryInS      config.ValueLoader[int64]
 
-	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, MicrosoftFabric, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
+	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, MicrosoftFabric, MAXCOMPUTE, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
 	StreamDestinations        = []string{SnowpipeStreaming, BQStreamAllEvents}
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
 	S3PathStyleRegex          = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
@@ -160,6 +162,7 @@ var WHDestNameMap = map[string]string{
 	AzureDatalake:   "azure_datalake",
 	AzureSynapse:    "azure_synapse",
 	MicrosoftFabric: "microsoft_fabric",
+	MAXCOMPUTE:      "maxcompute",
 }
 
 var ObjectStorageMap = map[string]string{
@@ -168,6 +171,7 @@ var ObjectStorageMap = map[string]string{
 	BQ:            GCS,
 	GCSDatalake:   GCS,
 	AzureDatalake: AzureBlob,
+	MAXCOMPUTE:    AlibabaOSS,
 }
 
 var SnowflakeStorageMap = map[string]string{
@@ -553,6 +557,10 @@ func ObjectStorageType(destType string, config any, useRudderStorage bool) strin
 	if destType == MicrosoftFabric {
 		return OneLake
 	}
+	// MaxCompute loads from Alibaba OSS regardless of the RudderStack storage flag.
+	if destType == MAXCOMPUTE {
+		return AlibabaOSS
+	}
 	if useRudderStorage {
 		return S3
 	}
@@ -604,7 +612,7 @@ func GetWarehouseIdentifier(destType, sourceID, destinationID string) string {
 }
 
 func GetTempFileExtension(destType string) string {
-	if destType == BQ {
+	if destType == BQ || destType == MAXCOMPUTE {
 		return "json.gz"
 	}
 	return "csv.gz"
@@ -835,7 +843,7 @@ func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
 
 func GetLoadFileType(destType string) string {
 	switch destType {
-	case BQ:
+	case BQ, MAXCOMPUTE:
 		return LoadFileTypeJson
 	case RS:
 		return LoadFileTypeCsv

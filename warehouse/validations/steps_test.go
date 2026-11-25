@@ -82,6 +82,20 @@ func TestValidationSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "MaxCompute",
+			dest: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{Name: warehouseutils.MAXCOMPUTE},
+			},
+			steps: []string{
+				model.VerifyingObjectStorage,
+				model.VerifyingConnections,
+				model.VerifyingCreateSchema,
+				model.VerifyingCreateAndAlterTable,
+				model.VerifyingFetchSchema,
+				model.VerifyingLoadTable,
+			},
+		},
+		{
 			name: "RS",
 			dest: backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{

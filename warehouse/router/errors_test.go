@@ -194,6 +194,12 @@ func TestErrorHandler_MatchUploadJobErrorType(t *testing.T) {
 			{
 				"Snowflake operation failed because soft limit on objects ", warehouseutils.SNOWFLAKE, errors.New("{\"exporting_data_failed\":{\"attempt\":4,\"errors\":[\"load table: copy into table: 090084 (22000): Operation failed because soft limit on objects of type 'Column' per table was exceeded. Please reduce number of 'Column's or contact Snowflake support about raising the limit.\"]}}"), model.ColumnCountError,
 			},
+			{
+				"MaxCompute full-scan guard", warehouseutils.MAXCOMPUTE, errors.New("ODPS query failed: ODPS-0130071: full scan of all partitions is not allowed"), model.UncategorizedError,
+			},
+			{
+				"MaxCompute identifier length is not column count", warehouseutils.MAXCOMPUTE, errors.New("ODPS query failed: ODPS-0130071: identifier too long, max length is 128"), model.UncategorizedError,
+			},
 		}
 
 		for _, tc := range testCases {

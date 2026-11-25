@@ -41,7 +41,7 @@ func Test_Dedup(t *testing.T) {
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
 
-	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	d, err := dedup.New(t.Context(), conf, stats.NOP, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -128,7 +128,7 @@ func Test_KeyDB(t *testing.T) {
 		d   types.Dedup
 		err error
 	)
-	d, err = dedup.New(conf, stats.NOP, logger.NOP)
+	d, err = dedup.New(t.Context(), conf, stats.NOP, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -208,7 +208,7 @@ func Test_Dedup_Window(t *testing.T) {
 	_ = os.RemoveAll(dbPath)
 	conf.Set("Dedup.dedupWindow", "1s")
 	t.Setenv("RUDDER_TMPDIR", dbPath)
-	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	d, err := dedup.New(t.Context(), conf, stats.NOP, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -240,7 +240,7 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
-	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	d, err := dedup.New(t.Context(), conf, stats.NOP, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -268,7 +268,7 @@ func Test_Dedup_Race(t *testing.T) {
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
 
-	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	d, err := dedup.New(t.Context(), conf, stats.NOP, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -314,7 +314,7 @@ func Test_Dedup_MirrorMode_Badger(t *testing.T) {
 	conf.Set("KeyDB.Dedup.Addresses", "localhost:12345")
 	conf.Set("KeyDB.Dedup.RetryPolicy.Disabled", true)
 
-	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	d, err := dedup.New(t.Context(), conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
 	defer d.Close()
 
@@ -346,7 +346,7 @@ func Test_Dedup_MirrorMode_KeyDB_Error(t *testing.T) {
 	conf.Set("KeyDB.Dedup.Addresses", "ransjkaljkl:12345") // Invalid address to simulate KeyDB failure
 	conf.Set("KeyDB.Dedup.RetryPolicy.Disabled", true)
 
-	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	d, err := dedup.New(t.Context(), conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
 
 	key := dedup.SingleKey("test_mirror_keydb_error")
@@ -366,7 +366,7 @@ func Test_Dedup_NoMirror(t *testing.T) {
 	// Test with no mirroring (default behavior when KeyDB fails)
 	conf.Set("Dedup.Mirror.Mode", "invalid_mode")
 
-	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	d, err := dedup.New(t.Context(), conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
 	defer d.Close()
 
@@ -398,7 +398,7 @@ func Test_Dedup_MirrorMode_KeyDB_Success(t *testing.T) {
 	// Test mirrorToBadger mode with working KeyDB
 	conf.Set("Dedup.Mirror.Mode", "mirrorToBadger")
 
-	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	d, err := dedup.New(t.Context(), conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
 	defer d.Close()
 
@@ -446,7 +446,7 @@ func Test_Dedup_MirrorMode_Badger_Success(t *testing.T) {
 	// Test mirrorToKeyDB mode (default) with working KeyDB
 	// Not setting the mode explicitly to test the default behavior
 
-	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	d, err := dedup.New(t.Context(), conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
 	defer d.Close()
 
@@ -490,7 +490,7 @@ func Benchmark_Dedup(b *testing.B) {
 	_ = os.MkdirAll(dbPath, 0o750)
 	conf := config.New()
 	b.Setenv("RUDDER_TMPDIR", dbPath)
-	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	d, err := dedup.New(b.Context(), conf, stats.NOP, logger.NOP)
 	require.NoError(b, err)
 	b.ResetTimer()
 	b.Run("no duplicates", func(b *testing.B) {
@@ -601,7 +601,7 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		service.Close()
 	})
 
-	c, err := keydbclient.NewClient(keydbclient.Config{
+	c, err := keydbclient.NewClient(t.Context(), keydbclient.Config{
 		Addresses:       []string{address},
 		TotalHashRanges: 128,
 		RetryPolicy: keydbclient.RetryPolicy{
@@ -609,9 +609,9 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		},
 	}, logger.NOP)
 	require.NoError(t, err)
-	size := c.ClusterSize()
+	_, err = c.Get(t.Context(), []string{"startup-check"}) // the first answer settles the client's node list
 	require.NoError(t, err)
-	require.EqualValues(t, 1, size)
+	require.EqualValues(t, 1, c.ClusterSize())
 	require.NoError(t, c.Close())
 
 	t.Logf("keydb address: %s", address)

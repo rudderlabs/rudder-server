@@ -88,6 +88,13 @@ func TestSafeTableName(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name:      "MaxCompute table pt remains unchanged with skip option",
+			destType:  whutils.MAXCOMPUTE,
+			tableName: "PT",
+			options:   intrOptions{skipReservedKeywordsEscaping: true},
+			expected:  "pt",
+		},
+		{
 			name:        "Data lake, no trimming",
 			destType:    whutils.S3Datalake,
 			tableName:   "ThisIsAReallyLongTableNameThatExceedsThe63CharacterLimitForDatalakeTables",
@@ -159,6 +166,26 @@ func TestSafeColumnName(t *testing.T) {
 			options:     intrOptions{skipReservedKeywordsEscaping: true},
 			expected:    "SELECT", // Should not escape reserved keyword
 			expectError: false,
+		},
+		{
+			name:       "MaxCompute pt escapes without skip option",
+			destType:   whutils.MAXCOMPUTE,
+			columnName: "pt",
+			expected:   "_pt",
+		},
+		{
+			name:       "MaxCompute PT escapes with skip option",
+			destType:   whutils.MAXCOMPUTE,
+			columnName: "PT",
+			options:    intrOptions{skipReservedKeywordsEscaping: true},
+			expected:   "_pt",
+		},
+		{
+			name:       "MaxCompute other keyword stays with skip option",
+			destType:   whutils.MAXCOMPUTE,
+			columnName: "SELECT",
+			options:    intrOptions{skipReservedKeywordsEscaping: true},
+			expected:   "select",
 		},
 		{
 			name:        "Data lake, no trimming",

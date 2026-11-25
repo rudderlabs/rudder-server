@@ -75,6 +75,17 @@ func defaultHandle(destType string) *Handle {
 	return batchRouter
 }
 
+// useMemStats replaces stats.Default with an in-memory store until the test ends.
+func useMemStats(t *testing.T) *memstats.Store {
+	t.Helper()
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+	originalStats := stats.Default
+	stats.Default = statsStore
+	t.Cleanup(func() { stats.Default = originalStats })
+	return statsStore
+}
+
 func TestAsyncDestinationManager(t *testing.T) {
 	misc.Init()
 
@@ -363,11 +374,8 @@ func TestAsyncDestinationManager(t *testing.T) {
 		batchRouter.jobsDB = mockBatchRouterJobsDB
 		batchRouter.debugger = mockDestinationDebugger
 
-		statsStore, err := memstats.New()
-		require.NoError(t, err)
+		statsStore := useMemStats(t)
 
-		batchRouter.asyncPollTimeStat = statsStore.NewStat("async_poll_time", stats.TimerType)
-		batchRouter.asyncAbortedJobCount = statsStore.NewStat("async_aborted_job_count", stats.CountType)
 		batchRouter.asyncGetImportingIterations = statsStore.NewStat("async_get_importing_iterations", stats.HistogramType)
 
 		mockBatchRouterJobsDB.EXPECT().GetImporting(
@@ -450,8 +458,12 @@ func TestAsyncDestinationManager(t *testing.T) {
 			batchRouter.pollAsyncStatus(ctx)
 		}()
 		<-done
-		require.EqualValues(t, 1, statsStore.Get("async_aborted_job_count", stats.Tags{}).LastValue())
+		require.EqualValues(t, 1, statsStore.Get("async_aborted_job_count", batchRouter.asyncDestinationTags("destinationID")).LastValue())
 		require.EqualValues(t, 1, statsStore.Get("async_get_importing_iterations", stats.Tags{}).LastValue())
+		require.Len(t, statsStore.Get("async_find_import_time", batchRouter.asyncDestinationTags("destinationID")).Durations(), 1)
+		require.Len(t, statsStore.Get("async_get_importing_time", batchRouter.asyncDestinationTags("destinationID")).Durations(), 1)
+		require.Len(t, statsStore.Get("async_poll_status_update_time", batchRouter.asyncDestinationTags("destinationID")).Durations(), 1)
+		require.Len(t, statsStore.Get("async_import_duration", batchRouter.asyncDestinationTags("destinationID")).Durations(), 1)
 	})
 	t.Run("Poll (StatusCode=StatusOK)", func(t *testing.T) {
 		t.Run("not HasFailed and HasWarning", func(t *testing.T) {
@@ -466,11 +478,8 @@ func TestAsyncDestinationManager(t *testing.T) {
 			batchRouter.jobsDB = mockBatchRouterJobsDB
 			batchRouter.debugger = mockDestinationDebugger
 
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := useMemStats(t)
 
-			batchRouter.asyncPollTimeStat = statsStore.NewStat("async_poll_time", stats.TimerType)
-			batchRouter.asyncSuccessfulJobCount = statsStore.NewStat("async_successful_job_count", stats.CountType)
 			batchRouter.asyncGetImportingIterations = statsStore.NewStat("async_get_importing_iterations", stats.HistogramType)
 
 			mockBatchRouterJobsDB.EXPECT().GetImporting(
@@ -557,7 +566,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 				batchRouter.pollAsyncStatus(ctx)
 			}()
 			<-done
-			require.EqualValues(t, 1, statsStore.Get("async_successful_job_count", stats.Tags{}).LastValue())
+			require.EqualValues(t, 1, statsStore.Get("async_successful_job_count", batchRouter.asyncDestinationTags("destinationID")).LastValue())
 		})
 		t.Run("HasFailed and HasWarning", func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 1000*time.Second)
@@ -574,14 +583,8 @@ func TestAsyncDestinationManager(t *testing.T) {
 			batchRouter.jobsDB = mockBatchRouterJobsDB
 			batchRouter.debugger = mockDestinationDebugger
 
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := useMemStats(t)
 
-			batchRouter.asyncPollTimeStat = statsStore.NewStat("async_poll_time", stats.TimerType)
-			batchRouter.asyncFailedJobsTimeStat = statsStore.NewStat("async_failed_job_poll_time", stats.TimerType)
-			batchRouter.asyncSuccessfulJobCount = statsStore.NewStat("async_successful_job_count", stats.CountType)
-			batchRouter.asyncFailedJobCount = statsStore.NewStat("async_failed_job_count", stats.CountType)
-			batchRouter.asyncAbortedJobCount = statsStore.NewStat("async_aborted_job_count", stats.CountType)
 			batchRouter.asyncGetImportingIterations = statsStore.NewStat("async_get_importing_iterations", stats.HistogramType)
 
 			mockBatchRouterJobsDB.EXPECT().GetImporting(
@@ -710,9 +713,9 @@ func TestAsyncDestinationManager(t *testing.T) {
 				batchRouter.pollAsyncStatus(ctx)
 			}()
 			<-done
-			require.EqualValues(t, 2, statsStore.Get("async_successful_job_count", stats.Tags{}).LastValue())
-			require.EqualValues(t, 1, statsStore.Get("async_failed_job_count", stats.Tags{}).LastValue())
-			require.EqualValues(t, 1, statsStore.Get("async_aborted_job_count", stats.Tags{}).LastValue())
+			require.EqualValues(t, 2, statsStore.Get("async_successful_job_count", batchRouter.asyncDestinationTags("destinationID")).LastValue())
+			require.EqualValues(t, 1, statsStore.Get("async_failed_job_count", batchRouter.asyncDestinationTags("destinationID")).LastValue())
+			require.EqualValues(t, 1, statsStore.Get("async_aborted_job_count", batchRouter.asyncDestinationTags("destinationID")).LastValue())
 		})
 	})
 	t.Run("Poll (StatusCode not StatusOK and StatusBadRequest)", func(t *testing.T) {
@@ -730,11 +733,8 @@ func TestAsyncDestinationManager(t *testing.T) {
 		batchRouter.jobsDB = mockBatchRouterJobsDB
 		batchRouter.debugger = mockDestinationDebugger
 
-		statsStore, err := memstats.New()
-		require.NoError(t, err)
+		statsStore := useMemStats(t)
 
-		batchRouter.asyncPollTimeStat = statsStore.NewStat("async_poll_time", stats.TimerType)
-		batchRouter.asyncFailedJobCount = statsStore.NewStat("async_failed_job_count", stats.CountType)
 		batchRouter.asyncGetImportingIterations = statsStore.NewStat("async_get_importing_iterations", stats.HistogramType)
 
 		mockBatchRouterJobsDB.EXPECT().GetImporting(
@@ -819,7 +819,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 			batchRouter.pollAsyncStatus(ctx)
 		}()
 		<-done
-		require.EqualValues(t, 1, statsStore.Get("async_failed_job_count", stats.Tags{}).LastValue())
+		require.EqualValues(t, 1, statsStore.Get("async_failed_job_count", batchRouter.asyncDestinationTags("destinationID")).LastValue())
 	})
 	t.Run("SendJobsToStorage", func(t *testing.T) {
 		t.Run("Invalid Destination", func(t *testing.T) {

@@ -20,11 +20,13 @@ func TestReservedKeywords(t *testing.T) {
 			{"Select", true},
 			{"not_reserved", false},
 		}
-		for _, destination := range []string{whutils.POSTGRES, whutils.MicrosoftFabric} {
+		for _, destination := range []string{whutils.POSTGRES, whutils.MicrosoftFabric, whutils.MAXCOMPUTE} {
 			for _, tc := range testCases {
 				require.Equal(t, tc.isReserved, reservedkeywords.IsTableOrColumn(destination, tc.keyword))
 			}
 		}
+		// pt is MaxCompute's generated partition column
+		require.True(t, reservedkeywords.IsTableOrColumn(whutils.MAXCOMPUTE, "pt"))
 	})
 	t.Run("IsNamespace", func(t *testing.T) {
 		testCases := []struct {
@@ -36,10 +38,11 @@ func TestReservedKeywords(t *testing.T) {
 			{"Select", true},
 			{"not_reserved", false},
 		}
-		for _, destination := range []string{whutils.POSTGRES, whutils.MicrosoftFabric} {
+		for _, destination := range []string{whutils.POSTGRES, whutils.MicrosoftFabric, whutils.MAXCOMPUTE} {
 			for _, tc := range testCases {
 				require.Equal(t, tc.isReserved, reservedkeywords.IsNamespace(destination, tc.keyword))
 			}
 		}
+		require.True(t, reservedkeywords.IsNamespace(whutils.MAXCOMPUTE, "pt"))
 	})
 }

@@ -11,6 +11,7 @@ import (
 
 type BingAdsBulkUploader struct {
 	destName       string
+	apiProtocol    string
 	service        bingads.BulkServiceI
 	logger         logger.Logger
 	statsFactory   stats.Stats

@@ -46,6 +46,7 @@ var (
 		whutils.DELTALAKE:         model.StringDataType,
 		whutils.GCSDatalake:       model.StringDataType,
 		whutils.AzureDatalake:     model.StringDataType,
+		whutils.MAXCOMPUTE:        model.StringDataType,
 	}
 
 	reDateTime = regexp.MustCompile(

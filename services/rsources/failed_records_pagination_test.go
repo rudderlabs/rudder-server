@@ -119,6 +119,59 @@ func TestFailedRecords(t *testing.T) {
 		}
 		require.Len(t, seen, 20, "every record of both failed keys should be returned across pages")
 	})
+	t.Run("paged results match the unpaged result", func(t *testing.T) {
+		// Ids of job run 50 interleaved in id order with ids of job run 51, with
+		// record counts that put page boundaries exactly at the end of an id
+		// (page size 4 after "p-a", 10 after "p-c").
+		_, err := postgresContainer.DB.Exec(`INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id) VALUES
+			('p-a', '50', '1', '1', 'a'),
+			('p-b', '51', '1', '1', 'b'),
+			('p-c', '50', '1', '1', 'c'),
+			('p-d', '51', '1', '1', 'd'),
+			('p-e', '50', '1', '1', 'e')`)
+		require.NoError(t, err)
+		for id, count := range map[string]int{"p-a": 4, "p-b": 3, "p-c": 6, "p-d": 2, "p-e": 5} {
+			_, err = postgresContainer.DB.Exec(`INSERT INTO rsources_failed_keys_v2_records (id, record_id)
+				SELECT $1, to_json('record-'||lpad(s.id::text, 3, '0')) FROM generate_series(1, $2) as s(id)`, id, count)
+			require.NoError(t, err)
+		}
+
+		flatten := func(r JobFailedRecordsV2) []string {
+			var res []string
+			for _, task := range r.Tasks {
+				for _, source := range task.Sources {
+					for _, destination := range source.Destinations {
+						for _, record := range destination.Records {
+							res = append(res, destination.ID+"/"+string(record.Record))
+						}
+					}
+				}
+			}
+			return res
+		}
+		unpaged, err := service.GetFailedRecords(context.Background(), "50", JobFilter{}, PagingInfo{})
+		require.NoError(t, err)
+		expected := flatten(unpaged)
+		require.Len(t, expected, 15)
+
+		for _, size := range []int{1, 2, 4, 5, 10, 15, 100} {
+			t.Run(fmt.Sprintf("page size %d", size), func(t *testing.T) {
+				var paged []string
+				paging := PagingInfo{Size: size}
+				for page := 0; ; page++ {
+					require.Less(t, page, 20, "paging did not terminate")
+					r, err := service.GetFailedRecords(context.Background(), "50", JobFilter{}, paging)
+					require.NoError(t, err)
+					paged = append(paged, flatten(r)...)
+					if r.Paging == nil {
+						break
+					}
+					paging = PagingInfo{Size: size, NextPageToken: r.Paging.NextPageToken}
+				}
+				require.ElementsMatch(t, expected, paged)
+			})
+		}
+	})
 }
 
 func BenchmarkFailedRecordsPerformanceTest(b *testing.B) {
