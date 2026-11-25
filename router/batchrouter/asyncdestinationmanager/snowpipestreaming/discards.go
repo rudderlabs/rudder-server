@@ -78,6 +78,20 @@ func getDiscardedRecordsFromEvent(
 	tableName string,
 	formattedTS string,
 ) (discardedRecords []discardInfo) {
+	return discardRecordsFromEvent(log, event, snowpipeSchema, tableName, formattedTS, true)
+}
+
+// discardRecordsFromEvent is [getDiscardedRecordsFromEvent], with the marshalling of slices to strings made optional:
+// the classic SDK re-parses such strings, whereas the high-performance architecture stores them as text, so the
+// high-performance path keeps them native and prepares values itself (see [prepareValuesHP]).
+func discardRecordsFromEvent(
+	log logger.Logger,
+	event *event,
+	snowpipeSchema whutils.ModelTableSchema,
+	tableName string,
+	formattedTS string,
+	marshalSlices bool,
+) (discardedRecords []discardInfo) {
 	sliceType := reflect.TypeFor[[]any]()
 	for columnName, actualType := range event.Message.Metadata.Columns {
 		if expectedType, exists := snowpipeSchema[columnName]; exists && actualType != expectedType {
@@ -107,7 +121,7 @@ func getDiscardedRecordsFromEvent(
 				event.Message.Data[columnName] = convertedVal
 			}
 		}
-		if reflect.TypeOf(event.Message.Data[columnName]) == sliceType {
+		if marshalSlices && reflect.TypeOf(event.Message.Data[columnName]) == sliceType {
 			marshalledVal, err := jsonrs.Marshal(event.Message.Data[columnName])
 			if err != nil {
 				// Discard value if marshalling fails

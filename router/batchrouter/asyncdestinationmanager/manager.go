@@ -47,7 +47,7 @@ func newRegularManager(
 	case "LYTICS_BULK_UPLOAD":
 		return lyticsBulkUpload.NewManager(logger, statsFactory, destination)
 	case "SNOWPIPE_STREAMING":
-		return snowpipestreaming.New(conf, logger, statsFactory, destination), nil
+		return snowpipestreaming.NewManager(conf, logger, statsFactory, destination), nil
 	case "SALESFORCE_BULK_UPLOAD":
 		return salesforcebulkupload.NewManager(conf, logger, statsFactory, destination, backendConfig, secretVersions)
 	case "BQSTREAM_ALL_EVENTS":
