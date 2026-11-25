@@ -319,7 +319,6 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		// Should be function of body
 		workspaceId  = arctx.WorkspaceID
 		userIDHeader = req.userIDHeader
-		ipAddr       = req.ipAddr
 		body         = req.requestPayload
 
 		// values retrieved from first event in batch
@@ -360,8 +359,9 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	jobData.numEvents = len(eventsBatch)
 
 	type jobObject struct {
-		userID string
-		events []map[string]any
+		userID    string
+		requestIP string
+		events    []map[string]any
 	}
 
 	var (
@@ -447,13 +447,13 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		if _, ok := toSet["receivedAt"]; !ok {
 			toSet["receivedAt"] = gw.now().Format(misc.RFC3339Milli)
 		}
-		if _, ok := toSet["request_ip"]; ok {
-			var tcOk bool
-			ipAddr, tcOk = toSet["request_ip"].(string)
-			if !tcOk {
+		ipAddr := req.ipAddr
+		if rawIP, ok := toSet["request_ip"]; ok {
+			if eventIP, tcOk := rawIP.(string); tcOk {
+				ipAddr = eventIP
+			} else {
 				gw.logger.Warnn("request_ip is not a string")
 			}
-
 		} else {
 			toSet["request_ip"] = ipAddr
 		}
@@ -464,8 +464,9 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 		userID := buildUserID(userIDHeader, anonIDFromReq, userIDFromReq)
 		out = append(out, jobObject{
-			userID: userID,
-			events: []map[string]any{toSet},
+			userID:    userID,
+			requestIP: ipAddr,
+			events:    []map[string]any{toSet},
 		})
 	}
 
@@ -538,7 +539,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			}
 			singularEventBatch := SingularEventBatch{
 				Batch:      userEvent.events,
-				RequestIP:  ipAddr,
+				RequestIP:  userEvent.requestIP,
 				WriteKey:   arctx.WriteKey,
 				ReceivedAt: receivedAt,
 			}
