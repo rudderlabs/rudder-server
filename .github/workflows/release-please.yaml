@@ -16,6 +16,19 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Install release-please
+        run: npm ci --ignore-scripts --prefix .github/tools/release-please
+
       - name: Create app token
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -25,17 +38,25 @@ jobs:
           permission-contents: write # to create release commits and tags
           permission-pull-requests: write # to create release PRs
 
-      - name: Extract branch name
-        shell: bash
-        run: echo "branch=$(echo "${GITHUB_REF#refs/heads/}")" >> $GITHUB_OUTPUT
-        id: extract_branch
-      - uses: google-github-actions/release-please-action@db8f2c60ee802b3748b512940dde88eabd7b7e01 # v3.7.13
-        id: release
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          pull-request-title-pattern: "chore: release ${version}"
-          release-type: go
-          package-name: rudder-server
-          default-branch: ${{ steps.extract_branch.outputs.branch }}
-          changelog-types: '[{"type":"feat","section":"Features","hidden":false},{"type":"fix","section":"Bug Fixes","hidden":false},{"type":"chore","section":"Miscellaneous","hidden":false},{"type":"refactor","section":"Miscellaneous","hidden":false},{"type":"test","section":"Miscellaneous","hidden":false},{"type":"doc","section":"Documentation","hidden":false}]'
-          bump-minor-pre-major: true
+      # release-please-action takes a custom title and changelog only from a config file, which also needs a manifest.
+      - name: Run release-please
+        env:
+          RELEASE_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          RELEASE_PLEASE=.github/tools/release-please/node_modules/.bin/release-please
+          ARGS=(
+            --token="$RELEASE_TOKEN"
+            --repo-url="$GITHUB_REPOSITORY"
+            --target-branch="$GITHUB_REF_NAME"
+            --release-type=go
+            --package-name=rudder-server
+          )
+
+          # Tags the version if its PR has been merged
+          "$RELEASE_PLEASE" github-release "${ARGS[@]}"
+
+          # Opens or updates the PR. github-release only recognises merged PRs with a "chore: release" title.
+          "$RELEASE_PLEASE" release-pr "${ARGS[@]}" \
+            --pull-request-title-pattern='chore: release ${version}' \
+            --changelog-sections=feat,fix,chore,refactor,test,doc \
+            --bump-minor-pre-major
