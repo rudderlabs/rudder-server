@@ -381,7 +381,12 @@ func (m *ManagerV2) sendTable(ctx context.Context, api hpAPI, session warehouseS
 		rowJobIDs = append(rowJobIDs, e.Metadata.JobID)
 	}
 
-	chunks, oversizedRows := restapi.NewChunker(m.config.maxChunkRawBytes.Load()).Chunk(rows)
+	chunks, oversizedRows, err := restapi.NewChunker(m.config.maxChunkRawBytes.Load()).Chunk(rows)
+	if err != nil {
+		failed := failAll(fmt.Errorf("chunking rows of %s: %w", info.tableName, err))
+		failed.discards = res.discards
+		return failed
+	}
 	if len(oversizedRows) > 0 {
 		res.abortedJobs = append(res.abortedJobs, lo.Map(oversizedRows, func(i, _ int) int64 { return rowJobIDs[i] })...)
 		res.abortReason = "some events were aborted because they exceed the 4 MiB request limit even when compressed"
@@ -472,7 +477,10 @@ func (m *ManagerV2) sendDiscards(ctx context.Context, api hpAPI, session warehou
 		}
 		rows = append(rows, b)
 	}
-	chunks, oversizedRows := restapi.NewChunker(m.config.maxChunkRawBytes.Load()).Chunk(rows)
+	chunks, oversizedRows, err := restapi.NewChunker(m.config.maxChunkRawBytes.Load()).Chunk(rows)
+	if err != nil {
+		return nil, fmt.Errorf("chunking discards: %w", err)
+	}
 	if len(oversizedRows) > 0 {
 		m.logger.Warnn("Dropping discards too large to send", logger.NewIntField("count", int64(len(oversizedRows))))
 	}

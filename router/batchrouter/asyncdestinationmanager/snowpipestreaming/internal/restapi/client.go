@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff/v5"
 	"github.com/google/uuid"
+	"github.com/hashicorp/go-retryablehttp"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
@@ -47,9 +47,9 @@ type Config struct {
 type Opt func(*Client)
 
 // WithHTTPClient sets the HTTP client used for every call.
-func WithHTTPClient(doer requestDoer) Opt {
+func WithHTTPClient(httpClient *http.Client) Opt {
 	return func(c *Client) {
-		c.doer = doer
+		c.httpClient = httpClient
 	}
 }
 
@@ -85,8 +85,9 @@ func WithClock(now func() time.Time) Opt {
 
 // Client calls the Snowpipe Streaming HP REST API for one Snowflake user. It is safe for concurrent use.
 type Client struct {
-	doer         requestDoer
-	accountURL   string // e.g. https://xy12345.us-east-1.snowflakecomputing.com
+	httpClient   *http.Client
+	ingest       *retryablehttp.Client // httpClient, with retries
+	accountURL   string                // e.g. https://xy12345.us-east-1.snowflakecomputing.com
 	ingestScheme string
 	maxRetries   int
 	minWait      time.Duration
@@ -115,8 +116,18 @@ func New(conf Config, opts ...Opt) (*Client, error) {
 	for _, opt := range opts {
 		opt(c)
 	}
-	if c.doer == nil {
-		c.doer = &http.Client{Timeout: time.Minute}
+	if c.httpClient == nil {
+		c.httpClient = &http.Client{Timeout: time.Minute}
+	}
+	c.ingest = &retryablehttp.Client{
+		HTTPClient:   c.httpClient,
+		RetryWaitMin: c.minWait,
+		RetryWaitMax: c.maxWait,
+		RetryMax:     c.maxRetries,
+		CheckRetry:   c.checkRetry,
+		Backoff:      retryablehttp.DefaultBackoff, // exponential, honouring Retry-After on 429 and 503
+		PrepareRetry: c.authorize,                  // a retry after a 401 carries the refreshed token
+		ErrorHandler: retryablehttp.PassthroughErrorHandler,
 	}
 	fingerprint, err := publicKeyFingerprint(conf.PrivateKey)
 	if err != nil {
@@ -129,7 +140,7 @@ func New(conf Config, opts ...Opt) (*Client, error) {
 		key:         conf.PrivateKey,
 		fingerprint: fingerprint,
 		accountURL:  c.accountURL,
-		doer:        c.doer,
+		doer:        c.httpClient,
 		now:         c.now,
 	}
 	return c, nil
@@ -222,71 +233,33 @@ func (c *Client) BulkChannelStatus(ctx context.Context, pipe PipeRef, channelNam
 	return res.ChannelStatuses, nil
 }
 
-// call sends a request to the ingest host and returns the body of a 200 response.
-// The same body and request id are sent on every attempt. A 401 refreshes the token and is retried once,
-// without counting towards the retry budget.
+// call sends a request to the ingest host and returns the body of a 200 response. Retries send the same body and
+// request id; Snowflake deduplicates an append replayed with the same continuation token.
 func (c *Client) call(ctx context.Context, method, path string, query url.Values, body []byte, contentType, contentEncoding string) ([]byte, error) {
+	host, err := c.host(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if query == nil {
 		query = url.Values{}
 	}
 	query.Set("requestId", uuid.NewString())
 
-	bo := backoff.NewExponentialBackOff()
-	bo.InitialInterval = c.minWait
-	bo.MaxInterval = c.maxWait
-
-	var reauthenticated bool
-	for attempt := 0; ; attempt++ {
-		resBody, err := c.attempt(ctx, method, path, query, body, contentType, contentEncoding)
-		if err == nil {
-			return resBody, nil
-		}
-
-		apiErr, isAPIErr := errors.AsType[*APIError](err)
-		if isAPIErr && apiErr.StatusCode == http.StatusUnauthorized && !reauthenticated {
-			reauthenticated = true
-			c.tokens.Invalidate()
-			attempt-- // a token refresh doesn't count as a retry
-			continue
-		}
-		if isAPIErr && !apiErr.retryable() {
-			return nil, err
-		}
-		if attempt >= c.maxRetries {
-			return nil, fmt.Errorf("giving up after %d attempts: %w", attempt+1, err)
-		}
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("%w: %w", ctx.Err(), err)
-		case <-time.After(bo.NextBackOff()):
-		}
-	}
-}
-
-func (c *Client) attempt(ctx context.Context, method, path string, query url.Values, body []byte, contentType, contentEncoding string) ([]byte, error) {
-	host, err := c.host(ctx)
-	if err != nil {
-		return nil, err
-	}
-	token, err := c.tokens.Token(ctx, host)
-	if err != nil {
-		return nil, fmt.Errorf("getting token: %w", err)
-	}
-
-	reqURL := c.ingestScheme + "://" + host + path + "?" + query.Encode()
-	req, err := http.NewRequestWithContext(ctx, method, reqURL, bytes.NewReader(body))
+	req, err := retryablehttp.NewRequestWithContext(ctx, method, c.ingestScheme+"://"+host+path+"?"+query.Encode(), body)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set(headerSnowflakeAuthorizationToken, "OAUTH")
 	req.Header.Set("Accept", contentTypeJSON) // without it, Snowflake answers 400
 	req.Header.Set("Content-Type", contentType)
 	if contentEncoding != "" {
 		req.Header.Set("Content-Encoding", contentEncoding)
 	}
+	if err := c.authorize(req.Request); err != nil {
+		return nil, err
+	}
 
-	resp, err := c.doer.Do(req)
+	resp, err := c.ingest.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("sending request: %w", err)
 	}
@@ -300,6 +273,43 @@ func (c *Client) attempt(ctx context.Context, method, path string, query url.Val
 		return nil, newAPIError(resp.StatusCode, resBody)
 	}
 	return resBody, nil
+}
+
+// authorize sets the scoped token for the request's ingest host.
+func (c *Client) authorize(req *http.Request) error {
+	token, err := c.tokens.Token(req.Context(), req.URL.Host)
+	if err != nil {
+		return fmt.Errorf("getting token: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	return nil
+}
+
+// checkRetry is the retry policy: connection errors as go-retryablehttp's default policy decides, a 401 after
+// refreshing the token, and the error responses [APIError.retryable] lists.
+func (c *Client) checkRetry(ctx context.Context, resp *http.Response, err error) (bool, error) {
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	if err != nil {
+		return retryablehttp.DefaultRetryPolicy(ctx, resp, err)
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return false, nil
+	case http.StatusUnauthorized:
+		c.tokens.Invalidate()
+		return true, nil
+	}
+	return retryableResponse(resp), nil
+}
+
+// retryableResponse reports whether an error response is worth another attempt. The error code decides, so the body
+// is read here and put back for the caller. A body that can't be read is retried, as a connection error would be.
+func retryableResponse(resp *http.Response) bool {
+	body, err := io.ReadAll(resp.Body)
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	return err != nil || newAPIError(resp.StatusCode, body).retryable()
 }
 
 // host returns the account's ingest host, discovering it on first use.
@@ -322,7 +332,7 @@ func (c *Client) host(ctx context.Context) (string, error) {
 	req.Header.Set(headerSnowflakeAuthorizationToken, "KEYPAIR_JWT")
 	req.Header.Set("Accept", contentTypeJSON)
 
-	resp, err := c.doer.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("sending hostname request: %w", err)
 	}

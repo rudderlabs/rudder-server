@@ -14,14 +14,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
+	"github.com/snowflakedb/gosnowflake/v2"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/compress"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -189,9 +191,11 @@ func (f *fakeHP) appendsOf(table string) []fakeAppend {
 }
 
 func decodeNDJSON(body []byte) []map[string]any {
-	dec, _ := zstd.NewReader(nil)
-	defer dec.Close()
-	raw, err := dec.DecodeAll(body, nil)
+	c, err := compress.New(compress.CompressionAlgoZstd, compress.CompressionLevelZstdDefault)
+	if err != nil {
+		panic(err)
+	}
+	raw, err := c.Decompress(body)
 	if err != nil {
 		panic(err)
 	}
@@ -572,7 +576,7 @@ func TestManagerV2(t *testing.T) {
 		conf.Set("SnowpipeStreaming.maxBufferCapacity", 32*1024*1024)
 		m := newTestManagerV2(t, api, wh, stats.NOP, conf)
 		big := track(2)
-		big.data["EVENT"] = randomString(7 * 1024 * 1024) // ~5.3 MiB compressed
+		big.data["EVENT"] = rand.String(7 * 1024 * 1024) // ~5.3 MiB compressed
 		file, jobIDs := writeBatch(t, track(1), big, track(3))
 		out := upload(m, file, jobIDs)
 		require.Equal(t, []int64{2}, out.AbortJobIDs)
@@ -980,19 +984,6 @@ func TestDispatcher(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, res.StatusCode)
 }
 
-func randomString(n int) string {
-	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, n)
-	seed := uint64(time.Now().UnixNano())
-	for i := range b {
-		seed ^= seed << 13
-		seed ^= seed >> 7
-		seed ^= seed << 17
-		b[i] = letters[seed%uint64(len(letters))]
-	}
-	return string(b)
-}
-
 // racingWarehouse simulates another pod adding the same columns: AddColumns fails, but the columns exist afterwards.
 type racingWarehouse struct {
 	*fakeWarehouse
@@ -1002,4 +993,11 @@ type racingWarehouse struct {
 func (w *racingWarehouse) AddColumns(context.Context, string, []whutils.ColumnInfo) error {
 	w.onAdd()
 	return w.addColumnsErr
+}
+
+func TestIsObjectNotFound(t *testing.T) {
+	notFound := &gosnowflake.SnowflakeError{Number: 2003, Message: "Table does not exist or not authorized."}
+	require.True(t, isObjectNotFound(fmt.Errorf("showing columns: %w", notFound)))
+	require.False(t, isObjectNotFound(&gosnowflake.SnowflakeError{Number: gosnowflake.ErrObjectNotExistOrAuthorized}), "390201 is an authentication error")
+	require.False(t, isObjectNotFound(errors.New("002003 does not exist or not authorized")), "only the typed error counts")
 }

@@ -32,43 +32,22 @@ const (
 	tokenRefreshMargin = 5 * time.Minute
 )
 
-// ParsePrivateKey parses a PEM encoded RSA private key.
-// It supports unencrypted PKCS#8 and PKCS#1 keys, and encrypted PKCS#8 keys (PBES2 with AES or Triple-DES),
-// which the Snowflake HP SDK can't decrypt but Go can.
+// ParsePrivateKey parses a PEM encoded PKCS#8 RSA private key, encrypted (PBES2 with AES or Triple-DES, which the
+// Snowflake HP SDK can't decrypt) or not. It accepts the same keys as the SQL connection (sqlconnect-go), with the same library.
 func ParsePrivateKey(pemContent, passphrase string) (*rsa.PrivateKey, error) {
 	block, _ := pem.Decode([]byte(pemContent))
 	if block == nil {
 		return nil, errors.New("decoding private key: no PEM block found")
 	}
-	switch block.Type {
-	case "ENCRYPTED PRIVATE KEY":
-		if passphrase == "" {
-			return nil, errors.New("parsing private key: key is encrypted but no passphrase was provided")
-		}
-		key, err := pkcs8.ParsePKCS8PrivateKeyRSA(block.Bytes, []byte(passphrase))
-		if err != nil {
-			return nil, fmt.Errorf("parsing encrypted private key: %w", err)
-		}
-		return key, nil
-	case "PRIVATE KEY":
-		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("parsing private key: %w", err)
-		}
-		rsaKey, ok := key.(*rsa.PrivateKey)
-		if !ok {
-			return nil, fmt.Errorf("parsing private key: expected an RSA key, got %T", key)
-		}
-		return rsaKey, nil
-	case "RSA PRIVATE KEY":
-		key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("parsing private key: %w", err)
-		}
-		return key, nil
-	default:
-		return nil, fmt.Errorf("parsing private key: unsupported PEM block type %q", block.Type)
+	var opts [][]byte
+	if passphrase != "" {
+		opts = append(opts, []byte(passphrase))
 	}
+	key, err := pkcs8.ParsePKCS8PrivateKeyRSA(block.Bytes, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("parsing private key: %w", err)
+	}
+	return key, nil
 }
 
 // accountIdentifier returns the account part used in key-pair JWT claims:

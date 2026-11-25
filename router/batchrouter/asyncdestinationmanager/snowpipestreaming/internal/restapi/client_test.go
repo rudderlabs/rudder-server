@@ -3,10 +3,11 @@ package restapi
 import (
 	"context"
 	"crypto"
-	"crypto/rand"
+	cryptorand "crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,11 +20,11 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 	"github.com/youmark/pkcs8"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 )
 
 // fakeSnowflake is an in-memory Snowflake account and ingest host, faithful to the behaviour verified against
@@ -185,7 +186,7 @@ func (f *fakeSnowflake) verifyKeyPairJWT(r *http.Request) {
 
 func newTestKey(t *testing.T) *rsa.PrivateKey {
 	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	key, err := rsa.GenerateKey(cryptorand.Reader, 2048)
 	require.NoError(t, err)
 	return key
 }
@@ -219,7 +220,8 @@ func TestClient(t *testing.T) {
 		require.Empty(t, open.ChannelStatus.CommittedOffset())
 		require.Equal(t, f.host()+" session:role:LOADER_ROLE", f.lastScope, "the role is part of the token scope")
 
-		chunks, oversized := NewChunker(1024).Chunk([][]byte{[]byte(`{"ID":"1"}`), []byte(`{"ID":"2"}`)})
+		chunks, oversized, err := NewChunker(1024).Chunk([][]byte{[]byte(`{"ID":"1"}`), []byte(`{"ID":"2"}`)})
+		require.NoError(t, err)
 		require.Empty(t, oversized)
 		require.Len(t, chunks, 1)
 		res, err := c.AppendRows(ctx, testChannel, AppendRowsRequest{
@@ -270,7 +272,10 @@ func TestClient(t *testing.T) {
 		f.failNext = []int{500, 500, 500, 500, 500}
 
 		_, err := c.OpenChannel(ctx, testChannel)
-		require.ErrorContains(t, err, "giving up after 4 attempts")
+		apiErr, ok := errors.AsType[*APIError](err)
+		require.True(t, ok, err)
+		require.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
+		require.Len(t, f.requestIDs, 4, "one attempt and three retries")
 	})
 
 	t.Run("a 401 refreshes the token once", func(t *testing.T) {
@@ -331,13 +336,16 @@ func TestParsePrivateKey(t *testing.T) {
 
 	for name, pemContent := range map[string]string{
 		"pkcs8":                     encode("PRIVATE KEY", pkcs8DER),
-		"pkcs1":                     encode("RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key)),
 		"triple-des (HP SDK fails)": encrypt(pkcs8.TripleDESCBC, crypto.SHA256),
 		"aes-256 sha-256":           encrypt(pkcs8.AES256CBC, crypto.SHA256),
 		"aes-256 sha-1":             encrypt(pkcs8.AES256CBC, crypto.SHA1),
 	} {
 		t.Run(name, func(t *testing.T) {
-			parsed, err := ParsePrivateKey(pemContent, "secret")
+			passphrase := ""
+			if strings.Contains(pemContent, "ENCRYPTED") {
+				passphrase = "secret"
+			}
+			parsed, err := ParsePrivateKey(pemContent, passphrase)
 			require.NoError(t, err)
 			require.True(t, key.Equal(parsed))
 		})
@@ -349,7 +357,11 @@ func TestParsePrivateKey(t *testing.T) {
 	})
 	t.Run("missing passphrase", func(t *testing.T) {
 		_, err := ParsePrivateKey(encrypt(pkcs8.AES256CBC, crypto.SHA256), "")
-		require.ErrorContains(t, err, "no passphrase")
+		require.Error(t, err)
+	})
+	t.Run("PKCS#1, which the SQL connection rejects too", func(t *testing.T) {
+		_, err := ParsePrivateKey(encode("RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key)), "")
+		require.Error(t, err)
 	})
 	t.Run("not a PEM", func(t *testing.T) {
 		_, err := ParsePrivateKey("garbage", "")
@@ -363,7 +375,8 @@ func TestChunker(t *testing.T) {
 		for i := range rows {
 			rows[i] = []byte(`{"ID":"` + strconv.Itoa(i) + `"}`)
 		}
-		chunks, oversized := NewChunker(100).Chunk(rows)
+		chunks, oversized, err := NewChunker(100).Chunk(rows)
+		require.NoError(t, err)
 		require.Empty(t, oversized)
 		require.Greater(t, len(chunks), 1)
 		next := 0
@@ -380,9 +393,10 @@ func TestChunker(t *testing.T) {
 
 	t.Run("halves chunks that compress above the limit and skips rows too large on their own", func(t *testing.T) {
 		c := &Chunker{maxRawBytes: 1 << 20, maxBodyBytes: 200}
-		big := []byte(`{"S":"` + randomASCII(500) + `"}`)
-		rows := [][]byte{[]byte(`{"ID":"1"}`), []byte(`{"S":"` + randomASCII(120) + `"}`), big, []byte(`{"S":"` + randomASCII(120) + `"}`), []byte(`{"ID":"5"}`)}
-		chunks, oversized := c.Chunk(rows)
+		big := []byte(`{"S":"` + rand.String(500) + `"}`)
+		rows := [][]byte{[]byte(`{"ID":"1"}`), []byte(`{"S":"` + rand.String(120) + `"}`), big, []byte(`{"S":"` + rand.String(120) + `"}`), []byte(`{"ID":"5"}`)}
+		chunks, oversized, err := c.Chunk(rows)
+		require.NoError(t, err)
 		require.Equal(t, []int{2}, oversized)
 		var covered []int
 		for _, ch := range chunks {
@@ -395,22 +409,9 @@ func TestChunker(t *testing.T) {
 	})
 }
 
-func randomASCII(n int) string {
-	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	for i := range b {
-		b[i] = letters[int(b[i])%len(letters)]
-	}
-	return string(b)
-}
-
 func decompress(t *testing.T, body []byte) []byte {
 	t.Helper()
-	dec, err := zstd.NewReader(nil)
-	require.NoError(t, err)
-	defer dec.Close()
-	out, err := dec.DecodeAll(body, nil)
+	out, err := compressor.Decompress(body)
 	require.NoError(t, err)
 	return out
 }
