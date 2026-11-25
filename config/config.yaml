@@ -91,6 +91,7 @@ JobsDB:
     maxOpenConnections: 64
 Router:
   disableEventDeliveryUploadMasking: false
+  enableReportingSampleEventMasking: true
   jobQueryBatchSize: 10000
   updateStatusBatchSize: 1000
   readSleep: 1000ms
