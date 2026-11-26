@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/samber/lo"
@@ -247,7 +248,7 @@ func (w *asyncWorker) pollImport(imp *asyncImport) asyncStep {
 	brt.asyncDestinationTimer("async_import_duration", w.destinationID).Since(imp.startedAt)
 	w.stats.pollsPerImport.Observe(float64(imp.polls))
 	imp.tracked()
-	w.imports = w.imports[1:]
+	w.imports = slices.Delete(w.imports, 0, 1)
 	return w.recordOutcome(statusList)
 }
 
