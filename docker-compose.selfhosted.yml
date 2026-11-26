@@ -1,0 +1,10 @@
+version: "3.7"
+
+services:
+  backend:
+    environment:
+      - RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true
+      - RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH=/etc/rudderstack/workspaceConfig.json
+      - DEST_TRANSFORM_URL=http://transformer:9090
+    volumes:
+      - ./config/workspaceConfig.sample.json:/etc/rudderstack/workspaceConfig.json:ro
