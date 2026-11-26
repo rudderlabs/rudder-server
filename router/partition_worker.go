@@ -80,6 +80,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 			deliveryCountStatsCache: cache.NewStatsCache(func(labels deliveryMetricLabels) stats.Measurement {
 				return stats.Default.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, labels.ToStatTags())
 			}),
+			stats: newWorkerStats(stats.Default),
 			workLoopThroughput: newSmaHistogram(
 				workLoopThroughput,
 				workLoopThroughputStat,
