@@ -2,6 +2,7 @@ package router
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -15,6 +16,39 @@ import (
 )
 
 const reportingSampleEventMaskingMetric = "router_reporting_sample_event_masking"
+
+func TestReportingSampleEventMaskingDefaults(t *testing.T) {
+	t.Cleanup(config.Reset)
+
+	newHandle := func() *Handle {
+		rt := &Handle{
+			destType:         "TEST_DEST",
+			reloadableConfig: &reloadableConfig{},
+		}
+		rt.setupReloadableVars()
+		return rt
+	}
+
+	t.Run("runtime config enables masking", func(t *testing.T) {
+		configPath, err := filepath.Abs("../config/config.yaml")
+		require.NoError(t, err)
+		t.Setenv("CONFIG_PATH", configPath)
+		config.Reset()
+		_, err = config.Default.ConfigFileUsed()
+		require.NoError(t, err)
+
+		require.True(t, newHandle().reloadableConfig.enableReportingSampleEventMasking.Load())
+	})
+
+	t.Run("in-code fallback enables masking", func(t *testing.T) {
+		t.Setenv("CONFIG_PATH", filepath.Join(t.TempDir(), "missing.yaml"))
+		config.Reset()
+		_, err := config.Default.ConfigFileUsed()
+		require.Error(t, err)
+
+		require.True(t, newHandle().reloadableConfig.enableReportingSampleEventMasking.Load())
+	})
+}
 
 func TestMaskReportingSampleEvent(t *testing.T) {
 	t.Run("flag off leaves payload byte-identical", func(t *testing.T) {
