@@ -69,7 +69,10 @@ type parquetWriter struct {
 	queuedBytes    int64
 }
 
-const maxParquetQueuedBytes = 64 * bytesize.MB
+const (
+	maxParquetQueuedBytes = 64 * bytesize.MB
+	cellOverhead          = 32 // Interface, string header, and allocation rounding cost 19–42 B per cell.
+)
 
 func createParquetWriter(outputFilePath string, schema model.TableSchema, destType string, maxParallelWriters int64, disableParquetColumnIndex bool, pageSize int64) (LoadFileWriter, error) {
 	bufWriter, err := misc.CreateBufferedWriter(outputFilePath)
@@ -115,13 +118,12 @@ func (p *parquetWriter) WriteRow(row []any) error {
 	return p.writer.Flush(false)
 }
 
-// rowSize counts the real bytes of a row; parquet-go estimates every value as four bytes.
+// rowSize estimates queued memory; parquet-go estimates every value as four bytes.
 func rowSize(row []any) (n int64) {
 	for _, v := range row {
+		n += cellOverhead
 		if s, ok := v.(string); ok {
 			n += int64(len(s))
-		} else {
-			n += 8
 		}
 	}
 	return n
