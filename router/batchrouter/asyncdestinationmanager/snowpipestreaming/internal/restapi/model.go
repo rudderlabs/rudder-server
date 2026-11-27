@@ -10,11 +10,11 @@ import (
 
 // Error codes returned by the Snowpipe Streaming HP REST API that callers act on.
 const (
-	ErrCodeTableDoesNotExist      = "ERR_TABLE_DOES_NOT_EXIST_NOT_AUTHORIZED"
-	ErrCodeSchemaDoesNotExist     = "ERR_SCHEMA_DOES_NOT_EXIST_OR_NOT_AUTHORIZED"
-	ErrCodePipeDoesNotExist       = "ERR_PIPE_DOES_NOT_EXIST_OR_NOT_AUTHORIZED" // the table was dropped or replaced
-	ErrCodeStaleContinuationToken = "STALE_CONTINUATION_TOKEN_SEQUENCER"
-	ErrCodeRequestBodyTooLarge    = "REQUEST_BODY_TOO_LARGE"
+	CodeTableDoesNotExist      = "ERR_TABLE_DOES_NOT_EXIST_NOT_AUTHORIZED"
+	CodeSchemaDoesNotExist     = "ERR_SCHEMA_DOES_NOT_EXIST_OR_NOT_AUTHORIZED"
+	CodePipeDoesNotExist       = "ERR_PIPE_DOES_NOT_EXIST_OR_NOT_AUTHORIZED" // the table was dropped or replaced
+	CodeStaleContinuationToken = "STALE_CONTINUATION_TOKEN_SEQUENCER"
+	CodeRequestBodyTooLarge    = "REQUEST_BODY_TOO_LARGE"
 )
 
 // ChannelStatusSuccess is the status code of a healthy channel.

@@ -168,7 +168,7 @@ func (c *Client) OpenChannel(ctx context.Context, ref ChannelRef) (*OpenChannelR
 // is deduplicated by Snowflake, so retries are safe.
 func (c *Client) AppendRows(ctx context.Context, ref ChannelRef, req AppendRowsRequest) (*AppendRowsResponse, error) {
 	if len(req.Body) > maxRequestBodyBytes {
-		return nil, &APIError{StatusCode: http.StatusRequestEntityTooLarge, Code: ErrCodeRequestBodyTooLarge, Message: fmt.Sprintf("body of %d bytes exceeds %d bytes", len(req.Body), maxRequestBodyBytes)}
+		return nil, &APIError{StatusCode: http.StatusRequestEntityTooLarge, Code: CodeRequestBodyTooLarge, Message: fmt.Sprintf("body of %d bytes exceeds %d bytes", len(req.Body), maxRequestBodyBytes)}
 	}
 	path := "/v2/streaming/data" + channelPath(ref) + "/rows"
 	query := url.Values{}

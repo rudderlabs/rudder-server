@@ -273,14 +273,14 @@ var testHPDestination = &backendconfig.DestinationT{
 
 // newTestManagerV2 creates a manager on the fakes, as its own process (with its own channel state).
 // A nil api keeps the real REST client. opts come last, so they override these defaults.
-func newTestManagerV2(t *testing.T, api *fakeHP, wh *fakeWarehouse, statsFactory stats.Stats, conf *config.Config, opts ...v2Opt) *ManagerV2 {
+func newTestManagerV2(t *testing.T, api *fakeHP, wh *fakeWarehouse, statsFactory stats.Stats, conf *config.Config, opts ...hpOpt) *ManagerV2 {
 	t.Helper()
 	if conf == nil {
 		conf = config.New()
 	}
 	conf.Set("INSTANCE_ID", "rudder-0")
 	base := New(conf, logger.NOP, statsFactory, testHPDestination)
-	defaults := []v2Opt{
+	defaults := []hpOpt{
 		withWarehouseSession(func(*destConfig) warehouseSession { return wh }),
 		withState(newHPStates().get(testHPDestination.ID)),
 	}
@@ -576,7 +576,7 @@ func TestManagerV2(t *testing.T) {
 		require.Equal(t, []int64{2, 3}, out.FailedJobIDs)
 		_, infos := importIDOf(t, out)
 		require.Equal(t, "1", infos[0].Offset)
-		require.True(t, m.state.channels["TRACKS"].broken, "the channel is reopened before its next append")
+		require.True(t, m.state.channels["TRACKS"].isBroken, "the channel is reopened before its next append")
 	})
 
 	t.Run("an append whose response was lost but which landed is not failed", func(t *testing.T) {
@@ -733,12 +733,12 @@ func TestManagerV2(t *testing.T) {
 
 		// The table is dropped externally while its schema is cached and its channel broken.
 		delete(wh.tables, "TRACKS")
-		m.state.channels["TRACKS"].broken = true
+		m.state.channels["TRACKS"].isBroken = true
 		var dropped bool
 		api.openErr = func(restapi.ChannelRef) error {
 			if !dropped {
 				dropped = true
-				return &restapi.APIError{StatusCode: http.StatusNotFound, Code: restapi.ErrCodeTableDoesNotExist}
+				return &restapi.APIError{StatusCode: http.StatusNotFound, Code: restapi.CodeTableDoesNotExist}
 			}
 			return nil
 		}
@@ -861,7 +861,7 @@ func TestManagerV2(t *testing.T) {
 		file, jobIDs := writeBatch(t, track(1))
 		importID, _ := importIDOf(t, upload(m, file, jobIDs))
 
-		api.statusErr = &restapi.APIError{StatusCode: http.StatusNotFound, Code: restapi.ErrCodePipeDoesNotExist}
+		api.statusErr = &restapi.APIError{StatusCode: http.StatusNotFound, Code: restapi.CodePipeDoesNotExist}
 		res := poll(m, importID)
 		require.False(t, res.InProgress)
 		require.True(t, res.HasFailed)

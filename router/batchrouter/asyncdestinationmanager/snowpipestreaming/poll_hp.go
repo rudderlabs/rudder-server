@@ -248,7 +248,7 @@ func isTableGone(err error) bool {
 		return false
 	}
 	switch apiErr.Code {
-	case restapi.ErrCodeTableDoesNotExist, restapi.ErrCodePipeDoesNotExist, restapi.ErrCodeSchemaDoesNotExist:
+	case restapi.CodeTableDoesNotExist, restapi.CodePipeDoesNotExist, restapi.CodeSchemaDoesNotExist:
 		return true
 	}
 	return false

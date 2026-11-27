@@ -55,8 +55,8 @@ type (
 		committedOffset string
 		// rowsErrorBaseline is the channel's cumulative rows_error_count when it was opened or last polled.
 		rowsErrorBaseline int64
-		// broken is set when an append failed: the channel is reopened before its next append.
-		broken bool
+		// isBroken is set when an append failed: the channel is reopened before its next append.
+		isBroken bool
 	}
 
 	// hpCredentials identifies the Snowflake user an API client was built for.
@@ -114,32 +114,32 @@ func (ch *hpChannel) writesTo(database, schema string) bool {
 	return ch.ref.Database == database && ch.ref.Schema == schema
 }
 
-// v2Opt configures a [ManagerV2].
-type v2Opt func(*ManagerV2)
+// hpOpt configures a [ManagerV2].
+type hpOpt func(*ManagerV2)
 
 // withAPIFactory sets how the REST client is built for the destination's credentials.
-func withAPIFactory(newAPI func(creds hpCredentials) (hpAPI, error)) v2Opt {
+func withAPIFactory(newAPI func(creds hpCredentials) (hpAPI, error)) hpOpt {
 	return func(m *ManagerV2) {
 		m.newAPI = newAPI
 	}
 }
 
 // withWarehouseSession sets how a session for running SQL is opened.
-func withWarehouseSession(newSession func(destConf *destConfig) warehouseSession) v2Opt {
+func withWarehouseSession(newSession func(destConf *destConfig) warehouseSession) hpOpt {
 	return func(m *ManagerV2) {
 		m.newSession = newSession
 	}
 }
 
 // withState sets the destination's channel state, which defaults to this process's state for the destination.
-func withState(state *hpState) v2Opt {
+func withState(state *hpState) hpOpt {
 	return func(m *ManagerV2) {
 		m.state = state
 	}
 }
 
 // withClock sets the clock.
-func withClock(now func() time.Time) v2Opt {
+func withClock(now func() time.Time) hpOpt {
 	return func(m *ManagerV2) {
 		m.now = now
 	}
@@ -148,14 +148,14 @@ func withClock(now func() time.Time) v2Opt {
 // withMaxChunkRawBytes sets the uncompressed size compressed per chunk attempt, normally set in MB by config.
 //
 //nolint:unparam // tests only need one row per chunk so far
-func withMaxChunkRawBytes(n int) v2Opt {
+func withMaxChunkRawBytes(n int) hpOpt {
 	return func(m *ManagerV2) {
 		m.config.maxChunkRawBytes = config.SingleValueLoader(n)
 	}
 }
 
 // NewV2 creates a [ManagerV2] for the destination. base provides the helpers shared with the classic path.
-func NewV2(conf *config.Config, statsFactory stats.Stats, destination *backendconfig.DestinationT, base *Manager, opts ...v2Opt) *ManagerV2 {
+func NewV2(conf *config.Config, statsFactory stats.Stats, destination *backendconfig.DestinationT, base *Manager, opts ...hpOpt) *ManagerV2 {
 	m := &ManagerV2{
 		base:         base,
 		logger:       base.logger.Withn(logger.NewIntField("version", versionHP)),
@@ -516,7 +516,7 @@ func (m *ManagerV2) settleFailedAppend(ctx context.Context, ch *hpChannel, table
 	reopened, err := m.openChannel(ctx, ch.ref)
 	if err != nil {
 		log.Warnn("Failed to reopen channel after a failed append", obskit.Error(err))
-		ch.broken = true
+		ch.isBroken = true
 		return chunkJobIDs(chunks[:failed], jobIDs), chunkJobIDs(chunks[failed:], jobIDs)
 	}
 	m.state.channels[table] = reopened
@@ -586,7 +586,7 @@ func (m *ManagerV2) sendDiscards(ctx context.Context, session warehouseSession, 
 	}
 	for _, chunk := range chunks {
 		if err := m.appendChunk(ctx, ch, chunk.Body, offset, offset); err != nil {
-			ch.broken = true
+			ch.isBroken = true
 			return nil, err
 		}
 	}
@@ -598,7 +598,7 @@ func (m *ManagerV2) sendDiscards(ctx context.Context, session warehouseSession, 
 // channel returns the open channel for the table, opening it if needed.
 // A new column is accepted on an open channel, so unlike the classic path, adding columns never reopens it.
 func (m *ManagerV2) channel(ctx context.Context, session warehouseSession, destConf *destConfig, table string, eventSchema whutils.ModelTableSchema) (*hpChannel, error) {
-	if ch, ok := m.state.channels[table]; ok && !ch.broken && ch.writesTo(destConf.Database, destConf.Namespace) {
+	if ch, ok := m.state.channels[table]; ok && !ch.isBroken && ch.writesTo(destConf.Database, destConf.Namespace) {
 		return ch, nil
 	}
 	ref := restapi.ChannelRef{PipeRef: restapi.DefaultPipe(destConf.Database, destConf.Namespace, table), Channel: m.channelName}

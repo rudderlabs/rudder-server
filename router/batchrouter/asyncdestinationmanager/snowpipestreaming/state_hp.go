@@ -18,12 +18,12 @@ type hpState struct {
 
 // hpStates holds the state of every destination in this process.
 type hpStates struct {
-	mu    sync.Mutex
-	state map[string]*hpState // by destination ID
+	mu            sync.Mutex
+	byDestination map[string]*hpState // by destination ID
 }
 
 func newHPStates() *hpStates {
-	return &hpStates{state: make(map[string]*hpState)}
+	return &hpStates{byDestination: make(map[string]*hpState)}
 }
 
 // processHPStates is the state of this process. A restart loses it, which poll handles by reopening channels.
@@ -32,10 +32,10 @@ var processHPStates = newHPStates()
 func (s *hpStates) get(destinationID string) *hpState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	st, ok := s.state[destinationID]
+	st, ok := s.byDestination[destinationID]
 	if !ok {
 		st = &hpState{channels: make(map[string]*hpChannel)}
-		s.state[destinationID] = st
+		s.byDestination[destinationID] = st
 	}
 	return st
 }

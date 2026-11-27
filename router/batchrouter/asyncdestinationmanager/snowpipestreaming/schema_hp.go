@@ -179,14 +179,14 @@ func normaliseShowColumnsType(dataType string) (string, bool) {
 	return snowflake.CalculateDataType(columnType, parsed.Scale)
 }
 
-// errObjectDoesNotExist is Snowflake's SQL error 002003: the object doesn't exist, or isn't visible to the role.
+// sqlCodeObjectDoesNotExist is Snowflake's SQL error 002003: the object doesn't exist, or isn't visible to the role.
 // gosnowflake has no constant for it: its ErrObjectNotExistOrAuthorized (390201) is a different, authentication error.
-const errObjectDoesNotExist = 2003
+const sqlCodeObjectDoesNotExist = 2003
 
 // isObjectNotFound reports whether Snowflake says that an object doesn't exist, or isn't visible to the role.
 func isObjectNotFound(err error) bool {
 	sfErr, ok := errors.AsType[*gosnowflake.SnowflakeError](err)
-	return ok && sfErr.Number == errObjectDoesNotExist
+	return ok && sfErr.Number == sqlCodeObjectDoesNotExist
 }
 
 // hpSchemas caches table schemas per namespace and table, and keeps them complete for the columns of each batch.

@@ -249,7 +249,7 @@ func TestClient(t *testing.T) {
 
 		_, err := c.OpenChannel(ctx, ChannelRef{PipeRef: DefaultPipe("DB", "SCHEMA", "MISSING"), Channel: "c"})
 		require.Error(t, err)
-		require.True(t, HasCode(err, ErrCodeTableDoesNotExist))
+		require.True(t, HasCode(err, CodeTableDoesNotExist))
 		require.Len(t, f.requestIDs, 1)
 	})
 
@@ -308,7 +308,7 @@ func TestClient(t *testing.T) {
 		f := newFakeSnowflake(t, &key.PublicKey)
 		c := newTestClient(t, f, key)
 		_, err := c.AppendRows(ctx, testChannel, AppendRowsRequest{ContinuationToken: "0_1", Body: make([]byte, maxRequestBodyBytes+1)})
-		require.True(t, HasCode(err, ErrCodeRequestBodyTooLarge))
+		require.True(t, HasCode(err, CodeRequestBodyTooLarge))
 		require.Empty(t, f.requestIDs)
 	})
 

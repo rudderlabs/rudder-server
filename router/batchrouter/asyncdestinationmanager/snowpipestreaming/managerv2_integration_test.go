@@ -289,9 +289,9 @@ func (l *hpLive) sendUntilCommitted(m *ManagerV2, first, last int64) []int64 {
 	return nil
 }
 
-func (l *hpLive) newManager(statsFactory stats.Stats, opts ...v2Opt) *ManagerV2 {
+func (l *hpLive) newManager(statsFactory stats.Stats, opts ...hpOpt) *ManagerV2 {
 	clock := withClock(func() time.Time { return time.Now().Add(time.Duration(l.clockOffset.Load())) })
-	return NewV2(l.conf, statsFactory, l.destination, New(l.conf, logger.NOP, statsFactory, l.destination), append([]v2Opt{clock}, opts...)...)
+	return NewV2(l.conf, statsFactory, l.destination, New(l.conf, logger.NOP, statsFactory, l.destination), append([]hpOpt{clock}, opts...)...)
 }
 
 func (l *hpLive) hpTags() stats.Tags {
