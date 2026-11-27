@@ -93,7 +93,7 @@ func (m *ManagerV2) Poll(_ context.Context, pollInput common.AsyncPoll) common.P
 	if err := destConf.Decode(m.destination.Config); err != nil {
 		return m.failAll(infos, fmt.Errorf("decoding destination config: %w", err))
 	}
-	if _, err := m.apiFor(&destConf); err != nil {
+	if err := m.ensureAPI(&destConf); err != nil {
 		return m.failAll(infos, err)
 	}
 
@@ -305,7 +305,7 @@ func (m *ManagerV2) recoverFailedImports(ctx context.Context, database string, f
 	for _, info := range failed {
 		log := m.logger.Withn(logger.NewStringField("table", info.Table), logger.NewStringField("channel", info.ChannelID))
 		ref := restapi.ChannelRef{PipeRef: pipeOf(info, database), Channel: info.ChannelID}
-		ch, err := m.openChannel(ctx, m.api, ref)
+		ch, err := m.openChannel(ctx, ref)
 		if err != nil {
 			// The next upload reopens it. Until then nothing else is appended, so the outcome stands.
 			log.Warnn("Failed to reopen channel of failed import", obskit.Error(err))

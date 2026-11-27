@@ -191,7 +191,7 @@ func isObjectNotFound(err error) bool {
 
 // hpSchemas caches table schemas per namespace and table, and keeps them complete for the columns of each batch.
 type hpSchemas struct {
-	cache map[string]cachedSchema // by namespace + "." + table
+	cache map[string]cachedSchema // by namespace + "." + table; a manager serves one database, as batchrouter rebuilds it on config changes
 }
 
 func schemaKey(namespace, table string) string { return namespace + "." + table }

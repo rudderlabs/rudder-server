@@ -64,7 +64,7 @@ func (s *hpStats) with(extra stats.Tags) stats.Tags {
 	return lo.Assign(s.tags, extra)
 }
 
-// schemaCacheRefresh counts schema reads, by what triggered them: a cold cache or an unknown column.
+// schemaCacheRefresh counts schema reads, by what triggered them: a cold cache, an expired entry or an unknown column.
 func (s *hpStats) schemaCacheRefresh(trigger string) stats.Counter {
 	return s.factory.NewTaggedStat("snowpipe_streaming_schema_cache_refresh", stats.CountType, s.with(stats.Tags{"trigger": trigger}))
 }

@@ -215,9 +215,8 @@ func (m *ManagerV2) newRESTClient(creds hpCredentials) (hpAPI, error) {
 	)
 }
 
-// apiFor returns the REST client for the destination's credentials, building a new one when they change.
-// Channels and schemas belong to the account, so they are forgotten along with the old client.
-func (m *ManagerV2) apiFor(destConf *destConfig) (hpAPI, error) {
+// ensureAPI makes m.api the REST client for the destination's credentials, building a new one when they change.
+func (m *ManagerV2) ensureAPI(destConf *destConfig) error {
 	creds := hpCredentials{
 		account:    destConf.Account,
 		user:       destConf.User,
@@ -226,11 +225,11 @@ func (m *ManagerV2) apiFor(destConf *destConfig) (hpAPI, error) {
 		passphrase: destConf.PrivateKeyPassphrase,
 	}
 	if m.api != nil && m.apiCreds == creds {
-		return m.api, nil
+		return nil
 	}
 	api, err := m.newAPI(creds)
 	if err != nil {
-		return nil, fmt.Errorf("creating snowflake client: %w", err)
+		return fmt.Errorf("creating snowflake client: %w", err)
 	}
 	m.api, m.apiCreds = api, creds
 	// Channels belong to the account: a new key, user or role keeps writing to the same channels, but another
@@ -239,7 +238,7 @@ func (m *ManagerV2) apiFor(destConf *destConfig) (hpAPI, error) {
 		clear(m.state.channels)
 		m.state.account = creds.account
 	}
-	return api, nil
+	return nil
 }
 
 func (m *ManagerV2) Transform(job *jobsdb.JobT) (string, error) {
@@ -339,8 +338,7 @@ func (m *ManagerV2) Upload(_ context.Context, asyncDest *common.AsyncDestination
 	if err := destConf.Decode(asyncDest.Destination.Config); err != nil {
 		return m.abortJobs(asyncDest, fmt.Errorf("decoding destination config: %w", err).Error())
 	}
-	api, err := m.apiFor(&destConf)
-	if err != nil {
+	if err := m.ensureAPI(&destConf); err != nil {
 		m.logger.Warnn("Failed to create snowflake client", obskit.Error(err))
 		return m.abortJobs(asyncDest, err.Error())
 	}
@@ -357,7 +355,7 @@ func (m *ManagerV2) Upload(_ context.Context, asyncDest *common.AsyncDestination
 
 	var result uploadResult
 	for _, info := range infos {
-		result.add(m.sendTable(ctx, api, session, &destConf, info))
+		result.add(m.sendTable(ctx, session, &destConf, info))
 	}
 	result.fail(jobIDsOf(overflowed), fmt.Sprintf("some events were not uploaded because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes))
 	result.abort(jobIDsOf(oversized), fmt.Sprintf("some events were aborted because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes))
@@ -402,7 +400,7 @@ func tablesToSend(events []*event, maxInsertRequestSizeBytes int64) (infos []*up
 
 // sendTable sends one table's events: it makes sure the table has all their columns, prepares their values, sends
 // their discards, then appends their rows to the table's channel.
-func (m *ManagerV2) sendTable(ctx context.Context, api hpAPI, session warehouseSession, destConf *destConfig, info *uploadInfo) tableResult {
+func (m *ManagerV2) sendTable(ctx context.Context, session warehouseSession, destConf *destConfig, info *uploadInfo) tableResult {
 	log := m.logger.Withn(
 		append([]logger.Field{
 			logger.NewStringField("table", info.tableName),
@@ -419,12 +417,12 @@ func (m *ManagerV2) sendTable(ctx context.Context, api hpAPI, session warehouseS
 	// duplicates discards rather than rows.
 	var discardsImport *importInfo
 	if discards := m.prepareEvents(info, schema); len(discards) > 0 {
-		if discardsImport, err = m.sendDiscards(ctx, api, session, destConf, discards, info.latestJobID); err != nil {
+		if discardsImport, err = m.sendDiscards(ctx, session, destConf, discards, info.latestJobID); err != nil {
 			return failedTable(log, info, fmt.Errorf("sending discards for %s: %w", info.tableName, err))
 		}
 	}
 
-	ch, err := m.channel(ctx, api, session, destConf, info.tableName, info.eventsSchema)
+	ch, err := m.channel(ctx, session, destConf, info.tableName, info.eventsSchema)
 	if err != nil {
 		res := failedTable(log, info, err) // the error names the table's pipe
 		res.discards = discardsImport
@@ -433,7 +431,7 @@ func (m *ManagerV2) sendTable(ctx context.Context, api hpAPI, session warehouseS
 	m.countDuplicates(log, ch, info)
 
 	rows, rowJobIDs, unmarshalable, marshalErr := marshalRows(info.events)
-	res := m.appendRows(ctx, api, ch, info.tableName, rows, rowJobIDs, log)
+	res := m.appendRows(ctx, ch, info.tableName, rows, rowJobIDs, log)
 	res.discards = discardsImport
 	if len(unmarshalable) > 0 {
 		res.abort(unmarshalable, fmt.Sprintf("marshalling event: %v", marshalErr))
@@ -482,7 +480,7 @@ func marshalRows(events []*event) (rows [][]byte, jobIDs, unmarshalable []int64,
 // appendRows chunks the rows and appends the chunks in order, each chunk's end offset being its last job ID.
 // Rows too large for any request are aborted. If an append fails, [ManagerV2.settleFailedAppend] decides which
 // chunks stay importing.
-func (m *ManagerV2) appendRows(ctx context.Context, api hpAPI, ch *hpChannel, table string, rows [][]byte, jobIDs []int64, log logger.Logger) tableResult {
+func (m *ManagerV2) appendRows(ctx context.Context, ch *hpChannel, table string, rows [][]byte, jobIDs []int64, log logger.Logger) tableResult {
 	var res tableResult
 	chunks, oversized := restapi.NewChunker(m.config.maxChunkRawBytes.Load()).Chunk(rows)
 	if len(oversized) > 0 {
@@ -490,28 +488,20 @@ func (m *ManagerV2) appendRows(ctx context.Context, api hpAPI, ch *hpChannel, ta
 			"some events were aborted because they exceed the 4 MiB request limit even when compressed")
 	}
 	for i, chunk := range chunks {
-		if err := m.appendChunk(ctx, api, ch, chunk.Body, jobIDs[chunk.First], jobIDs[chunk.Last]); err != nil {
+		if err := m.appendChunk(ctx, ch, chunk.Body, jobIDs[chunk.First], jobIDs[chunk.Last]); err != nil {
 			log.Warnn("Failed to append rows, reopening the channel",
 				logger.NewIntField("chunk", int64(i)),
 				logger.NewIntField("chunks", int64(len(chunks))),
 				obskit.Error(err),
 			)
-			res.importingJobs, res.failedJobs = m.settleFailedAppend(ctx, api, ch, table, chunks, i, jobIDs, log)
+			res.importingJobs, res.failedJobs = m.settleFailedAppend(ctx, ch, table, chunks, i, jobIDs, log)
 			res.failedReason = err.Error()
 			break
 		}
-		res.importingJobs = append(res.importingJobs, jobIDs[chunk.First:chunk.Last+1]...)
+		res.importingJobs = append(res.importingJobs, chunkRows(chunk, jobIDs)...)
 	}
 	if n := len(res.importingJobs); n > 0 {
-		res.imported = &importInfo{
-			ChannelID: ch.ref.Channel,
-			Offset:    strconv.FormatInt(res.importingJobs[n-1], 10),
-			Table:     table,
-			Count:     n,
-			Version:   versionHP,
-			Schema:    ch.ref.Schema,
-			Database:  ch.ref.Database,
-		}
+		res.imported = newImportInfo(ch, table, res.importingJobs[n-1], n)
 	}
 	return res
 }
@@ -522,8 +512,8 @@ func (m *ManagerV2) appendRows(ctx context.Context, api hpAPI, ch *hpChannel, ta
 // accepted before it aren't committed yet. Reopening the channel discards whatever isn't committed, so its committed
 // offset then tells exactly which chunks landed: those stay importing, every other one fails. If the channel can't
 // be reopened, the chunks accepted so far stay importing for poll to confirm, and the rest fail.
-func (m *ManagerV2) settleFailedAppend(ctx context.Context, api hpAPI, ch *hpChannel, table string, chunks []restapi.Chunk, failed int, jobIDs []int64, log logger.Logger) (importing, failedJobs []int64) {
-	reopened, err := m.openChannel(ctx, api, ch.ref)
+func (m *ManagerV2) settleFailedAppend(ctx context.Context, ch *hpChannel, table string, chunks []restapi.Chunk, failed int, jobIDs []int64, log logger.Logger) (importing, failedJobs []int64) {
+	reopened, err := m.openChannel(ctx, ch.ref)
 	if err != nil {
 		log.Warnn("Failed to reopen channel after a failed append", obskit.Error(err))
 		ch.broken = true
@@ -533,30 +523,48 @@ func (m *ManagerV2) settleFailedAppend(ctx context.Context, api hpAPI, ch *hpCha
 	committed := lastOffset(reopened)
 	for _, c := range chunks {
 		if jobIDs[c.Last] <= committed {
-			importing = append(importing, jobIDs[c.First:c.Last+1]...)
+			importing = append(importing, chunkRows(c, jobIDs)...)
 		} else {
-			failedJobs = append(failedJobs, jobIDs[c.First:c.Last+1]...)
+			failedJobs = append(failedJobs, chunkRows(c, jobIDs)...)
 		}
 	}
 	return importing, failedJobs
+}
+
+// chunkRows returns the job IDs of the rows in the chunk.
+func chunkRows(c restapi.Chunk, jobIDs []int64) []int64 {
+	return jobIDs[c.First : c.Last+1]
+}
+
+// newImportInfo returns the import of count rows appended to the channel, up to offset.
+func newImportInfo(ch *hpChannel, table string, offset int64, count int) *importInfo {
+	return &importInfo{
+		ChannelID: ch.ref.Channel,
+		Offset:    strconv.FormatInt(offset, 10),
+		Table:     table,
+		Count:     count,
+		Version:   versionHP,
+		Schema:    ch.ref.Schema,
+		Database:  ch.ref.Database,
+	}
 }
 
 // chunkJobIDs returns the job IDs of the rows in the chunks.
 func chunkJobIDs(chunks []restapi.Chunk, jobIDs []int64) []int64 {
 	var ids []int64
 	for _, c := range chunks {
-		ids = append(ids, jobIDs[c.First:c.Last+1]...)
+		ids = append(ids, chunkRows(c, jobIDs)...)
 	}
 	return ids
 }
 
 // sendDiscards sends the discarded values of one table to the discards table, with that table's latest job ID as offset.
-func (m *ManagerV2) sendDiscards(ctx context.Context, api hpAPI, session warehouseSession, destConf *destConfig, discards []discardInfo, offset int64) (*importInfo, error) {
+func (m *ManagerV2) sendDiscards(ctx context.Context, session warehouseSession, destConf *destConfig, discards []discardInfo, offset int64) (*importInfo, error) {
 	table := discardsTable()
 	if _, err := m.ensureSchema(ctx, session, destConf.Namespace, table, discardsSchema()); err != nil {
 		return nil, fmt.Errorf("preparing discards table: %w", err)
 	}
-	ch, err := m.channel(ctx, api, session, destConf, table, discardsSchema())
+	ch, err := m.channel(ctx, session, destConf, table, discardsSchema())
 	if err != nil {
 		return nil, fmt.Errorf("opening discards channel: %w", err)
 	}
@@ -577,32 +585,24 @@ func (m *ManagerV2) sendDiscards(ctx context.Context, api hpAPI, session warehou
 		m.logger.Warnn("Dropping discards too large to send", logger.NewIntField("count", int64(len(oversizedRows))))
 	}
 	for _, chunk := range chunks {
-		if err := m.appendChunk(ctx, api, ch, chunk.Body, offset, offset); err != nil {
+		if err := m.appendChunk(ctx, ch, chunk.Body, offset, offset); err != nil {
 			ch.broken = true
 			return nil, err
 		}
 	}
 	sent := len(discards) - len(oversizedRows)
 	m.stats.discards.Count(sent)
-	return &importInfo{
-		ChannelID: ch.ref.Channel,
-		Offset:    strconv.FormatInt(offset, 10),
-		Table:     table,
-		Count:     sent,
-		Version:   versionHP,
-		Schema:    destConf.Namespace,
-		Database:  destConf.Database,
-	}, nil
+	return newImportInfo(ch, table, offset, sent), nil
 }
 
 // channel returns the open channel for the table, opening it if needed.
 // A new column is accepted on an open channel, so unlike the classic path, adding columns never reopens it.
-func (m *ManagerV2) channel(ctx context.Context, api hpAPI, session warehouseSession, destConf *destConfig, table string, eventSchema whutils.ModelTableSchema) (*hpChannel, error) {
+func (m *ManagerV2) channel(ctx context.Context, session warehouseSession, destConf *destConfig, table string, eventSchema whutils.ModelTableSchema) (*hpChannel, error) {
 	if ch, ok := m.state.channels[table]; ok && !ch.broken && ch.writesTo(destConf.Database, destConf.Namespace) {
 		return ch, nil
 	}
 	ref := restapi.ChannelRef{PipeRef: restapi.DefaultPipe(destConf.Database, destConf.Namespace, table), Channel: m.channelName}
-	ch, err := m.openChannel(ctx, api, ref)
+	ch, err := m.openChannel(ctx, ref)
 	if isTableGone(err) {
 		// The table was dropped after its schema was cached: recreate it and try once more.
 		m.logger.Infon("Table missing on channel open, recreating it", logger.NewStringField("table", table), obskit.Error(err))
@@ -610,7 +610,7 @@ func (m *ManagerV2) channel(ctx context.Context, api hpAPI, session warehouseSes
 		if _, err := m.ensureSchema(ctx, session, destConf.Namespace, table, eventSchema); err != nil {
 			return nil, err
 		}
-		ch, err = m.openChannel(ctx, api, ref)
+		ch, err = m.openChannel(ctx, ref)
 	}
 	if err != nil {
 		delete(m.state.channels, table)
@@ -624,9 +624,9 @@ func (m *ManagerV2) channel(ctx context.Context, api hpAPI, session warehouseSes
 }
 
 // openChannel opens (or reopens) a channel. Reopening discards the channel's uncommitted rows.
-func (m *ManagerV2) openChannel(ctx context.Context, api hpAPI, ref restapi.ChannelRef) (*hpChannel, error) {
+func (m *ManagerV2) openChannel(ctx context.Context, ref restapi.ChannelRef) (*hpChannel, error) {
 	defer m.stats.apiTimer("open_channel")()
-	res, err := api.OpenChannel(ctx, ref)
+	res, err := m.api.OpenChannel(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -647,11 +647,11 @@ func (m *ManagerV2) openChannel(ctx context.Context, api hpAPI, ref restapi.Chan
 }
 
 // appendChunk appends one chunk and moves the channel to the continuation token Snowflake returned.
-func (m *ManagerV2) appendChunk(ctx context.Context, api hpAPI, ch *hpChannel, body []byte, start, end int64) error {
+func (m *ManagerV2) appendChunk(ctx context.Context, ch *hpChannel, body []byte, start, end int64) error {
 	defer m.stats.apiTimer("append_rows")()
 	m.stats.requestBodySize.Observe(float64(len(body)))
 	endOffset := strconv.FormatInt(end, 10)
-	res, err := api.AppendRows(ctx, ch.ref, restapi.AppendRowsRequest{
+	res, err := m.api.AppendRows(ctx, ch.ref, restapi.AppendRowsRequest{
 		ContinuationToken: ch.continuationToken,
 		StartOffsetToken:  strconv.FormatInt(start, 10),
 		EndOffsetToken:    endOffset,
