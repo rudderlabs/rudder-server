@@ -557,6 +557,28 @@ func TestManagerV2(t *testing.T) {
 		require.False(t, poll(m, importID).HasFailed, "already committed")
 	})
 
+	t.Run("a failed append whose channel can't be reopened keeps the accepted chunks importing for poll", func(t *testing.T) {
+		api, wh := newFakeHP(), newFakeWarehouse()
+		m := newTestManagerV2(t, api, wh, stats.NOP, nil, withMaxChunkRawBytes(1)) // one row per chunk
+		api.appendErr = func(_ restapi.ChannelRef, n int) error {
+			if n == 2 {
+				api.openErr = func(restapi.ChannelRef) error { // the reopen that follows fails too
+					return &restapi.APIError{StatusCode: http.StatusServiceUnavailable}
+				}
+				return &restapi.APIError{StatusCode: http.StatusServiceUnavailable, Message: "gave up"}
+			}
+			return nil
+		}
+
+		file, jobIDs := writeBatch(t, track(1), track(2), track(3))
+		out := upload(m, file, jobIDs)
+		require.Equal(t, []int64{1}, out.ImportingJobIDs, "chunk 1 was accepted: poll confirms it")
+		require.Equal(t, []int64{2, 3}, out.FailedJobIDs)
+		_, infos := importIDOf(t, out)
+		require.Equal(t, "1", infos[0].Offset)
+		require.True(t, m.state.channels["TRACKS"].broken, "the channel is reopened before its next append")
+	})
+
 	t.Run("an append whose response was lost but which landed is not failed", func(t *testing.T) {
 		api, wh := newFakeHP(), newFakeWarehouse()
 		m := newTestManagerV2(t, api, wh, stats.NOP, nil)
