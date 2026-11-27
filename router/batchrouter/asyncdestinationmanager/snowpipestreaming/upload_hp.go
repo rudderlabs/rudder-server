@@ -193,8 +193,12 @@ func (m *ManagerV2) sendTable(ctx context.Context, session warehouseSession, des
 	// duplicates discards rather than rows.
 	var discardsImport *importInfo
 	if discards := m.prepareEvents(info, schema); len(discards) > 0 {
-		if discardsImport, err = m.sendDiscards(ctx, session, destConf, discards, info.latestJobID); err != nil {
+		imported, sent, err := m.sendDiscards(ctx, session, destConf, discards, info.latestJobID)
+		if err != nil {
 			return failedTable(log, info, fmt.Errorf("sending discards for %s: %w", info.tableName, err))
+		}
+		if sent {
+			discardsImport = imported
 		}
 	}
 
@@ -343,14 +347,15 @@ func chunkJobIDs(chunks []restapi.Chunk, jobIDs []int64) []int64 {
 }
 
 // sendDiscards sends the discarded values of one table to the discards table, with that table's latest job ID as offset.
-func (m *ManagerV2) sendDiscards(ctx context.Context, session warehouseSession, destConf *destConfig, discards []discardInfo, offset int64) (*importInfo, error) {
+// sent is false when every discard was too large to send: nothing was appended, so there is no import to poll.
+func (m *ManagerV2) sendDiscards(ctx context.Context, session warehouseSession, destConf *destConfig, discards []discardInfo, offset int64) (imported *importInfo, sent bool, err error) {
 	table := discardsTable()
 	if _, err := m.ensureSchema(ctx, session, destConf.Namespace, table, discardsSchema()); err != nil {
-		return nil, fmt.Errorf("preparing discards table: %w", err)
+		return nil, false, fmt.Errorf("preparing discards table: %w", err)
 	}
 	ch, err := m.channel(ctx, session, destConf, table, discardsSchema())
 	if err != nil {
-		return nil, fmt.Errorf("opening discards channel: %w", err)
+		return nil, false, fmt.Errorf("opening discards channel: %w", err)
 	}
 	// Every table's discards share this channel, and a retried batch can carry job IDs below ones already sent.
 	// The offset must still grow, or poll would see an earlier, higher offset as this import's commit.
@@ -360,7 +365,7 @@ func (m *ManagerV2) sendDiscards(ctx context.Context, session warehouseSession, 
 	for _, row := range discardRowsHP(discards) {
 		b, err := jsonrs.Marshal(row)
 		if err != nil {
-			return nil, fmt.Errorf("marshalling discard: %w", err)
+			return nil, false, fmt.Errorf("marshalling discard: %w", err)
 		}
 		rows = append(rows, b)
 	}
@@ -371,12 +376,15 @@ func (m *ManagerV2) sendDiscards(ctx context.Context, session warehouseSession, 
 	for _, chunk := range chunks {
 		if err := m.appendChunk(ctx, ch, chunk.Body, offset, offset); err != nil {
 			ch.isBroken = true
-			return nil, err
+			return nil, false, err
 		}
 	}
-	sent := len(discards) - len(oversizedRows)
-	m.stats.discards.Count(sent)
-	return newImportInfo(ch, table, offset, sent), nil
+	count := len(discards) - len(oversizedRows)
+	if count == 0 {
+		return nil, false, nil
+	}
+	m.stats.discards.Count(count)
+	return newImportInfo(ch, table, offset, count), true, nil
 }
 
 // countDuplicates reports events that are likely duplicates, without dropping them: job IDs repeated in the batch,

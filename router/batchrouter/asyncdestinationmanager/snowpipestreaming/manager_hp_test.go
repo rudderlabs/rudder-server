@@ -859,6 +859,28 @@ func TestManagerV2(t *testing.T) {
 		require.Equal(t, "LOCATION", api.appendsOf("RUDDER_DISCARDS")[0].rows[0]["COLUMN_NAME"])
 	})
 
+	t.Run("discards too large to send don't create an import for the discards channel", func(t *testing.T) {
+		api, wh := newFakeHP(), newFakeWarehouse()
+		conf := config.New()
+		conf.Set("SnowpipeStreaming.maxBufferCapacity", 32*1024*1024)
+		m := newTestManagerV2(t, api, wh, stats.NOP, conf)
+		wh.tables["TRACKS"] = maps.Clone(trackColumns)
+		wh.tables["TRACKS"]["COUNT"] = "int"
+
+		e := track(1)
+		e.columns = maps.Clone(trackColumns)
+		e.columns["COUNT"] = "string"
+		e.data["COUNT"] = rand.String(7 * 1024 * 1024) // discarded from the row, but too large for the discards table
+		file, jobIDs := writeBatch(t, e)
+		out := upload(m, file, jobIDs)
+		require.Equal(t, []int64{1}, out.ImportingJobIDs, "the row itself, without the value, is sent")
+
+		_, infos := importIDOf(t, out)
+		require.Len(t, infos, 1, "no import for discards that were never sent")
+		require.Equal(t, "TRACKS", infos[0].Table)
+		require.Empty(t, api.appendsOf("RUDDER_DISCARDS"))
+	})
+
 	t.Run("offsets on the shared discards channel only grow, even for a retried batch", func(t *testing.T) {
 		api, wh := newFakeHP(), newFakeWarehouse()
 		m := newTestManagerV2(t, api, wh, stats.NOP, nil)
