@@ -119,6 +119,9 @@ type (
 		// Schema is the namespace the import was written to. Only set on the high-performance path,
 		// where ChannelID is the channel name and the channel is addressed by database, schema and pipe.
 		Schema string `json:"schema,omitempty"`
+		// FirstOffset is the offset of the import's first row. Only set on the high-performance path, where it bounds
+		// which of the channel's committed offsets can belong to this import.
+		FirstOffset string `json:"firstOffset,omitempty"`
 		// Database is the database the import was written to. Only set on the high-performance path.
 		Database string `json:"database,omitempty"`
 	}

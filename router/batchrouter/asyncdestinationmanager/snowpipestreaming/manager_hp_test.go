@@ -390,7 +390,7 @@ func TestManagerV2(t *testing.T) {
 
 		importID, infos := importIDOf(t, out)
 		require.Len(t, infos, 1)
-		require.Equal(t, importInfo{ChannelID: "dest-1-rudder-0", Offset: "1003", Table: "TRACKS", Count: 3, Version: versionHP, Schema: "RUDDER", Database: "DB"}, *infos[0])
+		require.Equal(t, importInfo{ChannelID: "dest-1-rudder-0", Offset: "1003", FirstOffset: "1001", Table: "TRACKS", Count: 3, Version: versionHP, Schema: "RUDDER", Database: "DB"}, *infos[0])
 
 		appends := api.appendsOf("TRACKS")
 		require.Len(t, appends, 1)
@@ -624,6 +624,48 @@ func TestManagerV2(t *testing.T) {
 		out := upload(m, file, jobIDs)
 		require.Equal(t, []int64{1}, out.ImportingJobIDs)
 		require.Equal(t, []int64{2, 3}, out.FailedJobIDs)
+	})
+
+	t.Run("job IDs below the channel's committed offset: poll waits for their own commit", func(t *testing.T) {
+		// After a partition migration, a batch can carry job IDs below what the channel already committed. Snowflake
+		// reports the end offset of the last committed append, so an import is committed only when that is its own.
+		api, wh := newFakeHP(), newFakeWarehouse()
+		conf := config.New()
+		m := newTestManagerV2(t, api, wh, stats.NOP, conf)
+		file, jobIDs := writeBatch(t, track(9000))
+		importID, _ := importIDOf(t, upload(m, file, jobIDs))
+		api.commit()
+		require.False(t, poll(m, importID).HasFailed)
+
+		file, jobIDs = writeBatch(t, track(301), track(302), track(303))
+		out := upload(m, file, jobIDs)
+		require.Equal(t, jobIDs, out.ImportingJobIDs)
+		importID, _ = importIDOf(t, out)
+		require.True(t, poll(m, importID).InProgress, "the channel's offset 9000 says nothing about jobs 301-303")
+
+		// After a restart, before they commit, they are lost (the reopen discards them), not committed.
+		res := poll(newTestManagerV2(t, api, wh, stats.NOP, conf), importID)
+		require.True(t, res.HasFailed)
+		var infos []*importInfo
+		require.NoError(t, jsonrs.Unmarshal([]byte(res.FailedJobParameters), &infos))
+		require.Nil(t, infos[0].FailedJobIds, "none of the import's jobs landed")
+		api.commit()
+		require.Len(t, api.committedRows("TRACKS"), 1, "only job 9000: 301-303 were discarded and will be retried")
+	})
+
+	t.Run("job IDs below the channel's committed offset: committed once their own offset is", func(t *testing.T) {
+		api, wh := newFakeHP(), newFakeWarehouse()
+		m := newTestManagerV2(t, api, wh, stats.NOP, nil)
+		file, jobIDs := writeBatch(t, track(9000))
+		importID, _ := importIDOf(t, upload(m, file, jobIDs))
+		api.commit()
+		require.False(t, poll(m, importID).HasFailed)
+
+		file, jobIDs = writeBatch(t, track(301), track(302), track(303))
+		importID, _ = importIDOf(t, upload(m, file, jobIDs))
+		api.commit()
+		require.False(t, poll(m, importID).HasFailed)
+		require.Len(t, api.committedRows("TRACKS"), 4)
 	})
 
 	t.Run("an append whose response was lost but which landed is not failed", func(t *testing.T) {
@@ -947,27 +989,31 @@ func TestManagerV2(t *testing.T) {
 
 func TestResolveImport(t *testing.T) {
 	for _, tc := range []struct {
-		name                          string
-		committed, appended, expected string
-		state                         importState
-		failed                        *failedJobIds
+		name                                 string
+		committed, appended, first, expected string
+		state                                importState
+		failed                               *failedJobIds
 	}{
-		{name: "fresh channel, rows pending", committed: "", appended: "10", expected: "10", state: importInProgress},
-		{name: "empty offset, rows not pending", committed: "", appended: "", expected: "10", state: importFailed},
-		{name: "empty offset, older rows pending", committed: "", appended: "5", expected: "10", state: importFailed},
-		{name: "committed equals expected", committed: "10", appended: "", expected: "10", state: importCommitted},
-		{name: "committed beyond expected", committed: "12", appended: "12", expected: "10", state: importCommitted},
-		{name: "rows lost", committed: "4", appended: "", expected: "10", state: importFailed, failed: &failedJobIds{Start: 5, End: 10}},
-		{name: "flushing", committed: "4", appended: "10", expected: "10", state: importInProgress},
-		{name: "negative job ids", committed: "-5", appended: "", expected: "-2", state: importFailed, failed: &failedJobIds{Start: -4, End: -2}},
+		{name: "fresh channel, rows pending", committed: "", appended: "10", first: "1", expected: "10", state: importInProgress},
+		{name: "empty offset, rows not pending", committed: "", appended: "", first: "1", expected: "10", state: importFailed},
+		{name: "empty offset, older rows pending", committed: "", appended: "5", first: "1", expected: "10", state: importFailed},
+		{name: "committed equals expected", committed: "10", appended: "", first: "1", expected: "10", state: importCommitted},
+		{name: "committed above the import is not its own", committed: "12", appended: "", first: "1", expected: "10", state: importFailed},
+		{name: "rows lost", committed: "4", appended: "", first: "1", expected: "10", state: importFailed, failed: &failedJobIds{Start: 5, End: 10}},
+		{name: "flushing", committed: "4", appended: "10", first: "1", expected: "10", state: importInProgress},
+		{name: "negative job ids", committed: "-5", appended: "", first: "-6", expected: "-2", state: importFailed, failed: &failedJobIds{Start: -4, End: -2}},
+		{name: "earlier higher offset, rows pending", committed: "9000", appended: "303", first: "301", expected: "303", state: importInProgress},
+		{name: "earlier higher offset, rows not pending", committed: "9000", appended: "", first: "301", expected: "303", state: importFailed},
+		{name: "committed below the import", committed: "100", appended: "", first: "301", expected: "303", state: importFailed},
+		{name: "no first offset", committed: "4", appended: "", first: "", expected: "10", state: importFailed, failed: &failedJobIds{Start: 5, End: 10}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			state, failed, _ := resolveImport(tc.committed, tc.appended, tc.expected)
+			state, failed, _ := resolveImport(tc.committed, tc.appended, tc.first, tc.expected)
 			require.Equal(t, tc.state, state)
 			require.Equal(t, tc.failed, failed)
 		})
 	}
-	_, _, err := resolveImport("", "", "not a number")
+	_, _, err := resolveImport("", "", "", "not a number")
 	require.Error(t, err)
 }
 

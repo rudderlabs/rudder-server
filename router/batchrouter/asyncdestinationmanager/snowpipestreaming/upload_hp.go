@@ -281,7 +281,7 @@ func (m *ManagerV2) appendRows(ctx context.Context, ch *hpChannel, table string,
 		res.importingJobs = append(res.importingJobs, chunkRows(chunk, jobIDs)...)
 	}
 	if n := len(res.importingJobs); n > 0 {
-		res.imported = newImportInfo(ch, table, res.importingJobs[n-1], n)
+		res.imported = newImportInfo(ch, table, res.importingJobs[0], res.importingJobs[n-1], n)
 	}
 	return res
 }
@@ -324,16 +324,17 @@ func chunkRows(c restapi.Chunk, jobIDs []int64) []int64 {
 	return jobIDs[c.First : c.Last+1]
 }
 
-// newImportInfo returns the import of count rows appended to the channel, up to offset.
-func newImportInfo(ch *hpChannel, table string, offset int64, count int) *importInfo {
+// newImportInfo returns the import of count rows appended to the channel, from offset first to offset last.
+func newImportInfo(ch *hpChannel, table string, first, last int64, count int) *importInfo {
 	return &importInfo{
-		ChannelID: ch.ref.Channel,
-		Offset:    strconv.FormatInt(offset, 10),
-		Table:     table,
-		Count:     count,
-		Version:   versionHP,
-		Schema:    ch.ref.Schema,
-		Database:  ch.ref.Database,
+		ChannelID:   ch.ref.Channel,
+		Offset:      strconv.FormatInt(last, 10),
+		FirstOffset: strconv.FormatInt(first, 10),
+		Table:       table,
+		Count:       count,
+		Version:     versionHP,
+		Schema:      ch.ref.Schema,
+		Database:    ch.ref.Database,
 	}
 }
 
@@ -384,7 +385,7 @@ func (m *ManagerV2) sendDiscards(ctx context.Context, session warehouseSession, 
 		return nil, false, nil
 	}
 	m.stats.discards.Count(count)
-	return newImportInfo(ch, table, offset, count), true, nil
+	return newImportInfo(ch, table, offset, offset, count), true, nil
 }
 
 // countDuplicates reports events that are likely duplicates, without dropping them: job IDs repeated in the batch,

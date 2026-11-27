@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"sync"
@@ -30,43 +31,44 @@ const (
 )
 
 // resolveImport decides the state of an import from the channel's committed offset, the offset this process last
-// appended on the channel (empty if unknown, e.g. after a restart or a reopen) and the import's expected offset.
+// appended on the channel (empty if unknown, e.g. after a restart or a reopen), and the import's first and expected
+// (last) offsets.
 //
-// An empty committed offset is not an error: a channel reports none until its first commit, and none again after the
-// table is replaced. It is handled before parsing, never as a number. For a failed import, failed is the range of
-// failed job IDs, or nil when all of the import's jobs failed.
-func resolveImport(committed, appended, expected string) (state importState, failed *failedJobIds, err error) {
+// Snowflake reports the end offset of the last committed append, not the highest one, so offsets are compared for
+// equality: the import is committed when the committed offset is its own last offset, and still pending when this
+// process appended up to it. Otherwise its uncommitted rows are gone. If the committed offset falls within the
+// import's own range, the rows up to it landed and only the rest failed; otherwise, e.g. when the import's job IDs
+// are below an offset the channel committed earlier, none of them landed. For a failed import, failed is the range of
+// failed job IDs, or nil when all of the import's jobs failed. An empty committed offset (a fresh channel, or one
+// whose table was replaced) is handled before parsing, never as a number.
+func resolveImport(committed, appended, first, expected string) (state importState, failed *failedJobIds, err error) {
 	expectedID, err := strconv.ParseInt(expected, 10, 64)
 	if err != nil {
 		return importFailed, nil, fmt.Errorf("parsing expected offset %q: %w", expected, err)
 	}
-	appendedReached := false
-	if appended != "" {
-		appendedID, err := strconv.ParseInt(appended, 10, 64)
-		if err != nil {
-			return importFailed, nil, fmt.Errorf("parsing appended offset %q: %w", appended, err)
-		}
-		appendedReached = appendedID >= expectedID
-	}
-
-	if committed == "" {
-		if appendedReached {
-			return importInProgress, nil, nil // nothing committed yet on a fresh channel
-		}
+	switch {
+	case committed == expected:
+		return importCommitted, nil, nil
+	case appended == expected:
+		return importInProgress, nil, nil // appended in this process, not committed yet
+	case committed == "":
 		return importFailed, nil, fmt.Errorf("nothing committed on the channel and rows up to offset %d are no longer pending", expectedID)
 	}
 	committedID, err := strconv.ParseInt(committed, 10, 64)
 	if err != nil {
 		return importFailed, nil, fmt.Errorf("parsing committed offset %q: %w", committed, err)
 	}
-	if committedID >= expectedID {
-		return importCommitted, nil, nil
+	firstID := int64(math.MinInt64) // imports without a first offset: any offset below the expected one may be theirs
+	if first != "" {
+		if firstID, err = strconv.ParseInt(first, 10, 64); err != nil {
+			return importFailed, nil, fmt.Errorf("parsing first offset %q: %w", first, err)
+		}
 	}
-	if !appendedReached {
+	if committedID >= firstID && committedID < expectedID {
 		return importFailed, &failedJobIds{Start: committedID + 1, End: expectedID},
 			fmt.Errorf("rows lost: committed offset %d, expected offset %d, no longer pending", committedID, expectedID)
 	}
-	return importInProgress, nil, nil
+	return importFailed, nil, fmt.Errorf("none of the rows from offset %s to %d committed: the channel's committed offset is %d, and they are no longer pending", first, expectedID, committedID)
 }
 
 // Poll checks the imports against their channels' status. Imports that reached a terminal state are remembered until
@@ -203,7 +205,7 @@ func (m *ManagerV2) resolve(info *importInfo, res statusResult) importState {
 		ch.committedOffset = committed
 	}
 
-	state, failedRange, err := resolveImport(committed, appended, info.Offset)
+	state, failedRange, err := resolveImport(committed, appended, info.FirstOffset, info.Offset)
 	switch state {
 	case importCommitted:
 		m.polled[info.Table] = info
@@ -314,7 +316,7 @@ func (m *ManagerV2) recoverFailedImports(ctx context.Context, database string, f
 		}
 		m.state.channels[info.Table] = ch
 
-		state, failedRange, _ := resolveImport(ch.committedOffset, "", info.Offset)
+		state, failedRange, _ := resolveImport(ch.committedOffset, "", info.FirstOffset, info.Offset)
 		switch state {
 		case importCommitted:
 			log.Infon("Import committed before its channel was reopened", logger.NewStringField("committedOffset", ch.committedOffset))
