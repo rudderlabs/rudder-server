@@ -20,6 +20,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 	"github.com/youmark/pkcs8"
 
@@ -220,8 +221,7 @@ func TestClient(t *testing.T) {
 		require.Empty(t, open.ChannelStatus.CommittedOffset())
 		require.Equal(t, f.host()+" session:role:LOADER_ROLE", f.lastScope, "the role is part of the token scope")
 
-		chunks, oversized, err := NewChunker(1024).Chunk([][]byte{[]byte(`{"ID":"1"}`), []byte(`{"ID":"2"}`)})
-		require.NoError(t, err)
+		chunks, oversized := NewChunker(1024).Chunk([][]byte{[]byte(`{"ID":"1"}`), []byte(`{"ID":"2"}`)})
 		require.Empty(t, oversized)
 		require.Len(t, chunks, 1)
 		res, err := c.AppendRows(ctx, testChannel, AppendRowsRequest{
@@ -375,8 +375,7 @@ func TestChunker(t *testing.T) {
 		for i := range rows {
 			rows[i] = []byte(`{"ID":"` + strconv.Itoa(i) + `"}`)
 		}
-		chunks, oversized, err := NewChunker(100).Chunk(rows)
-		require.NoError(t, err)
+		chunks, oversized := NewChunker(100).Chunk(rows)
 		require.Empty(t, oversized)
 		require.Greater(t, len(chunks), 1)
 		next := 0
@@ -395,8 +394,7 @@ func TestChunker(t *testing.T) {
 		c := &Chunker{maxRawBytes: 1 << 20, maxBodyBytes: 200}
 		big := []byte(`{"S":"` + rand.String(500) + `"}`)
 		rows := [][]byte{[]byte(`{"ID":"1"}`), []byte(`{"S":"` + rand.String(120) + `"}`), big, []byte(`{"S":"` + rand.String(120) + `"}`), []byte(`{"ID":"5"}`)}
-		chunks, oversized, err := c.Chunk(rows)
-		require.NoError(t, err)
+		chunks, oversized := c.Chunk(rows)
 		require.Equal(t, []int{2}, oversized)
 		var covered []int
 		for _, ch := range chunks {
@@ -411,7 +409,10 @@ func TestChunker(t *testing.T) {
 
 func decompress(t *testing.T, body []byte) []byte {
 	t.Helper()
-	out, err := compressor.Decompress(body)
+	dec, err := zstd.NewReader(nil)
+	require.NoError(t, err)
+	defer dec.Close()
+	out, err := dec.DecodeAll(body, nil)
 	require.NoError(t, err)
 	return out
 }

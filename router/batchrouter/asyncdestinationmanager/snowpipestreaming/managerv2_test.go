@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/snowflakedb/gosnowflake/v2"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/compress"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -191,16 +191,17 @@ func (f *fakeHP) appendsOf(table string) []fakeAppend {
 }
 
 func decodeNDJSON(body []byte) []map[string]any {
-	c, err := compress.New(compress.CompressionAlgoZstd, compress.CompressionLevelZstdDefault)
+	dec, err := zstd.NewReader(nil)
 	if err != nil {
 		panic(err)
 	}
-	raw, err := c.Decompress(body)
+	defer dec.Close()
+	raw, err := dec.DecodeAll(body, nil)
 	if err != nil {
 		panic(err)
 	}
 	var rows []map[string]any
-	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(raw)), "\n") {
 		var row map[string]any
 		if err := jsonrs.Unmarshal([]byte(line), &row); err != nil {
 			panic(err)
@@ -270,18 +271,23 @@ var testHPDestination = &backendconfig.DestinationT{
 	},
 }
 
-func newTestManagerV2(t *testing.T, api *fakeHP, wh *fakeWarehouse, statsFactory stats.Stats, conf *config.Config) *ManagerV2 {
+// newTestManagerV2 creates a manager on the fakes, as its own process (with its own channel state).
+// A nil api keeps the real REST client. opts come last, so they override these defaults.
+func newTestManagerV2(t *testing.T, api *fakeHP, wh *fakeWarehouse, statsFactory stats.Stats, conf *config.Config, opts ...v2Opt) *ManagerV2 {
 	t.Helper()
 	if conf == nil {
 		conf = config.New()
 	}
 	conf.Set("INSTANCE_ID", "rudder-0")
 	base := New(conf, logger.NOP, statsFactory, testHPDestination)
-	m := NewV2(conf, statsFactory, testHPDestination, base)
-	m.newAPI = func(hpCredentials) (hpAPI, error) { return api, nil }
-	m.newSession = func(*destConfig) warehouseSession { return wh }
-	m.state = newHPStates().get(testHPDestination.ID) // every test manager is its own process, unless it shares a state
-	return m
+	defaults := []v2Opt{
+		withWarehouseSession(func(*destConfig) warehouseSession { return wh }),
+		withState(newHPStates().get(testHPDestination.ID)),
+	}
+	if api != nil {
+		defaults = append(defaults, withAPIFactory(func(hpCredentials) (hpAPI, error) { return api, nil }))
+	}
+	return NewV2(conf, statsFactory, testHPDestination, base, append(defaults, opts...)...)
 }
 
 type testEvent struct {
@@ -504,8 +510,7 @@ func TestManagerV2(t *testing.T) {
 
 	t.Run("a failed append reopens the channel: chunks not committed by then fail, so none can land twice", func(t *testing.T) {
 		api, wh := newFakeHP(), newFakeWarehouse()
-		m := newTestManagerV2(t, api, wh, stats.NOP, nil)
-		m.config.maxChunkRawBytes = config.SingleValueLoader(1) // one row per chunk
+		m := newTestManagerV2(t, api, wh, stats.NOP, nil, withMaxChunkRawBytes(1)) // one row per chunk
 		api.appendErr = func(_ restapi.ChannelRef, n int) error {
 			if n == 2 {
 				return &restapi.APIError{StatusCode: http.StatusServiceUnavailable, Message: "gave up"}
@@ -532,8 +537,7 @@ func TestManagerV2(t *testing.T) {
 
 	t.Run("a failed append keeps the chunks committed before it importing", func(t *testing.T) {
 		api, wh := newFakeHP(), newFakeWarehouse()
-		m := newTestManagerV2(t, api, wh, stats.NOP, nil)
-		m.config.maxChunkRawBytes = config.SingleValueLoader(1)
+		m := newTestManagerV2(t, api, wh, stats.NOP, nil, withMaxChunkRawBytes(1))
 		api.appendErr = func(_ restapi.ChannelRef, n int) error {
 			if n == 2 {
 				for _, ch := range api.channels {
@@ -615,8 +619,7 @@ func TestManagerV2(t *testing.T) {
 	t.Run("after a restart, uncommitted rows are lost: the import fails, and only the jobs above the committed offset", func(t *testing.T) {
 		api, wh := newFakeHP(), newFakeWarehouse()
 		conf := config.New()
-		m := newTestManagerV2(t, api, wh, stats.NOP, conf)
-		m.config.maxChunkRawBytes = config.SingleValueLoader(1) // one row per chunk
+		m := newTestManagerV2(t, api, wh, stats.NOP, conf, withMaxChunkRawBytes(1)) // one row per chunk
 
 		file, jobIDs := writeBatch(t, track(1), track(2), track(3))
 		importID, _ := importIDOf(t, upload(m, file, jobIDs))
@@ -686,9 +689,8 @@ func TestManagerV2(t *testing.T) {
 
 	t.Run("status errors keep polling until the stuck threshold", func(t *testing.T) {
 		api, wh := newFakeHP(), newFakeWarehouse()
-		m := newTestManagerV2(t, api, wh, stats.NOP, nil)
 		now := time.Now()
-		m.now = func() time.Time { return now }
+		m := newTestManagerV2(t, api, wh, stats.NOP, nil, withClock(func() time.Time { return now }))
 		file, jobIDs := writeBatch(t, track(1))
 		importID, _ := importIDOf(t, upload(m, file, jobIDs))
 
@@ -732,8 +734,7 @@ func TestManagerV2(t *testing.T) {
 		importID, _ := importIDOf(t, upload(m, file, jobIDs))
 
 		// batchrouter rebuilds the manager when the destination's config changes; the process keeps running.
-		rebuilt := newTestManagerV2(t, api, wh, stats.NOP, conf)
-		rebuilt.state = m.state
+		rebuilt := newTestManagerV2(t, api, wh, stats.NOP, conf, withState(m.state))
 		require.True(t, poll(rebuilt, importID).InProgress)
 		require.Equal(t, 1, api.opens, "nothing reopened")
 		api.commit()
@@ -743,9 +744,8 @@ func TestManagerV2(t *testing.T) {
 
 	t.Run("cached schemas expire, so a column dropped outside RudderStack is added back", func(t *testing.T) {
 		api, wh := newFakeHP(), newFakeWarehouse()
-		m := newTestManagerV2(t, api, wh, stats.NOP, nil)
 		now := time.Now()
-		m.now = func() time.Time { return now }
+		m := newTestManagerV2(t, api, wh, stats.NOP, nil, withClock(func() time.Time { return now }))
 		file, jobIDs := writeBatch(t, track(1))
 		upload(m, file, jobIDs)
 
@@ -763,12 +763,11 @@ func TestManagerV2(t *testing.T) {
 
 	t.Run("columns added by another pod at the same time don't fail the batch", func(t *testing.T) {
 		api, wh := newFakeHP(), newFakeWarehouse()
-		m := newTestManagerV2(t, api, wh, stats.NOP, nil)
 		wh.tables["TRACKS"] = maps.Clone(trackColumns)
 		delete(wh.tables["TRACKS"], "TAGS")
 		wh.addColumnsErr = errors.New("column already exists")
 		session := &racingWarehouse{fakeWarehouse: wh, onAdd: func() { wh.tables["TRACKS"]["TAGS"] = "string" }}
-		m.newSession = func(*destConfig) warehouseSession { return session }
+		m := newTestManagerV2(t, api, wh, stats.NOP, nil, withWarehouseSession(func(*destConfig) warehouseSession { return session }))
 
 		file, jobIDs := writeBatch(t, track(1))
 		out := upload(m, file, jobIDs)
@@ -847,9 +846,7 @@ func TestManagerV2(t *testing.T) {
 	})
 
 	t.Run("an invalid private key aborts the batch", func(t *testing.T) {
-		api, wh := newFakeHP(), newFakeWarehouse()
-		m := newTestManagerV2(t, api, wh, stats.NOP, nil)
-		m.newAPI = m.newRESTClient
+		m := newTestManagerV2(t, nil, newFakeWarehouse(), stats.NOP, nil) // the real REST client, given an invalid key
 		file, jobIDs := writeBatch(t, track(1))
 		out := upload(m, file, jobIDs)
 		require.Equal(t, jobIDs, out.AbortJobIDs)
@@ -956,7 +953,8 @@ func (r recordingManager) GetUploadStats(common.GetUploadStatsInput) common.GetU
 func TestDispatcher(t *testing.T) {
 	var calls []string
 	conf := config.New()
-	d := NewManager(conf, logger.NOP, stats.NOP, testHPDestination)
+	d, ok := NewManager(conf, logger.NOP, stats.NOP, testHPDestination).(*Dispatcher)
+	require.True(t, ok)
 	d.v1 = recordingManager{name: "v1", calls: &calls}
 	d.v2 = recordingManager{name: "v2", calls: &calls}
 

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -47,6 +48,7 @@ func TestManagerV2Integration(t *testing.T) {
 
 type hpLive struct {
 	t           *testing.T
+	clockOffset atomic.Int64 // added to the managers' clock, e.g. to expire cached schemas
 	ctx         context.Context
 	conf        *config.Config
 	destination *backendconfig.DestinationT
@@ -201,8 +203,7 @@ func runHPIntegration(t *testing.T, credsKey string, full bool) {
 
 		// A new process polls at once, without the channel's state: anything not committed yet is failed, and the
 		// channel reopened so it can't commit later.
-		restarted := live.newManager(stats.NOP)
-		restarted.state = newHPStates().get(live.destination.ID) // a new process: no channel state
+		restarted := live.newManager(stats.NOP, withState(newHPStates().get(live.destination.ID))) // a new process: no channel state
 		res := live.pollUntilDone(restarted, importID, true)
 		var retry []int64
 		if res.HasFailed {
@@ -226,9 +227,13 @@ func runHPIntegration(t *testing.T, credsKey string, full bool) {
 			importID, _ := importIDOf(t, out)
 			live.pollUntilDone(restarted, importID, false)
 		}
-		time.Sleep(20 * time.Second) // let anything wrongly left in flight commit
-		require.Equal(t, 3, live.int(`SELECT COUNT(*) FROM %s WHERE ID IN ('id-40','id-41','id-42')`, "TRACKS"))
+		countRows := func() int {
+			return live.int(`SELECT COUNT(*) FROM %s WHERE ID IN ('id-40','id-41','id-42')`, "TRACKS")
+		}
+		require.Equal(t, 3, countRows())
 		require.Equal(t, 3, live.int(`SELECT COUNT(DISTINCT ID) FROM %s WHERE ID IN ('id-40','id-41','id-42')`, "TRACKS"))
+		// Nothing wrongly left in flight may commit later and duplicate a row.
+		require.Never(t, func() bool { return countRows() != 3 }, 20*time.Second, 2*time.Second)
 		m = restarted
 	})
 
@@ -249,8 +254,8 @@ func runHPIntegration(t *testing.T, credsKey string, full bool) {
 			_, err := live.db.ExecContext(ctx, fmt.Sprintf(tc.ddl, fmt.Sprintf("%q.%q", namespace, "PAGES")))
 			require.NoError(t, err)
 			if strings.Contains(tc.ddl, "DROP COLUMN") {
-				m.now = func() time.Time { return time.Now().Add(time.Hour) } // the schema cache expires
-				defer func() { m.now = time.Now }()
+				live.clockOffset.Store(int64(time.Hour)) // the schema cache expires
+				defer live.clockOffset.Store(0)
 			}
 
 			committed := live.sendUntilCommitted(m, base+20, base+30)
@@ -284,8 +289,9 @@ func (l *hpLive) sendUntilCommitted(m *ManagerV2, first, last int64) []int64 {
 	return nil
 }
 
-func (l *hpLive) newManager(statsFactory stats.Stats) *ManagerV2 {
-	return NewV2(l.conf, statsFactory, l.destination, New(l.conf, logger.NOP, statsFactory, l.destination))
+func (l *hpLive) newManager(statsFactory stats.Stats, opts ...v2Opt) *ManagerV2 {
+	clock := withClock(func() time.Time { return time.Now().Add(time.Duration(l.clockOffset.Load())) })
+	return NewV2(l.conf, statsFactory, l.destination, New(l.conf, logger.NOP, statsFactory, l.destination), append([]v2Opt{clock}, opts...)...)
 }
 
 func (l *hpLive) hpTags() stats.Tags {
@@ -299,18 +305,15 @@ func (l *hpLive) asyncDest(file string, jobIDs []int64) *common.AsyncDestination
 // pollUntilDone polls until the imports leave the in-progress state. Unless allowFailure, they must succeed.
 func (l *hpLive) pollUntilDone(m asyncManager, importID string, allowFailure bool) common.PollStatusResponse {
 	l.t.Helper()
-	deadline := time.Now().Add(3 * time.Minute)
-	for {
-		res := m.Poll(l.ctx, common.AsyncPoll{ImportId: importID})
-		if !res.InProgress {
-			if !allowFailure {
-				require.False(l.t, res.HasFailed, "import failed: %s %s", res.Error, res.FailedJobParameters)
-			}
-			return res
-		}
-		require.True(l.t, time.Now().Before(deadline), "import still in progress after 3 minutes")
-		time.Sleep(2 * time.Second)
+	var res common.PollStatusResponse
+	require.Eventually(l.t, func() bool {
+		res = m.Poll(l.ctx, common.AsyncPoll{ImportId: importID})
+		return !res.InProgress
+	}, 3*time.Minute, 2*time.Second, "import still in progress after 3 minutes")
+	if !allowFailure {
+		require.False(l.t, res.HasFailed, "import failed: %s %s", res.Error, res.FailedJobParameters)
 	}
+	return res
 }
 
 func (l *hpLive) count(table string) int {

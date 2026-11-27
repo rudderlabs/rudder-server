@@ -4,18 +4,20 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/rudderlabs/rudder-go-kit/compress"
+	"github.com/klauspost/compress/zstd"
 )
 
-// compressor is shared: it is safe for concurrent use.
-var compressor = mustCompressor()
+// encoder is shared: EncodeAll is safe for concurrent use. It is klauspost's pure-Go zstd, as rudder-go-kit/compress
+// uses for its non-cgo mode; rudder-go-kit/compress itself can't be used, since it also links DataDog/zstd, which needs
+// cgo, and rudder-server is built with cgo disabled.
+var encoder = mustEncoder()
 
-func mustCompressor() *compress.Compressor {
-	c, err := compress.New(compress.CompressionAlgoZstd, compress.CompressionLevelZstdDefault)
+func mustEncoder() *zstd.Encoder {
+	e, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedDefault))
 	if err != nil {
-		panic(fmt.Errorf("creating zstd compressor: %w", err))
+		panic(fmt.Errorf("creating zstd encoder: %w", err))
 	}
-	return c
+	return e
 }
 
 // Chunk is a zstd-compressed NDJSON body holding the rows First..Last (inclusive) of the input.
@@ -41,41 +43,34 @@ func NewChunker(maxRawBytes int) *Chunker {
 
 // Chunk returns the chunks for the given JSON-encoded rows, in order. Each row must be a single line of JSON.
 // Rows that don't fit in a request even on their own are left out of every chunk, and their indexes returned as oversized.
-func (c *Chunker) Chunk(rows [][]byte) (chunks []Chunk, oversized []int, err error) {
+func (c *Chunker) Chunk(rows [][]byte) (chunks []Chunk, oversized []int) {
 	for first := 0; first < len(rows); {
 		last, rawSize := first, len(rows[first])+1
 		for last+1 < len(rows) && rawSize+len(rows[last+1])+1 <= c.maxRawBytes {
 			last++
 			rawSize += len(rows[last]) + 1
 		}
-		if chunks, oversized, err = c.fit(rows, first, last, chunks, oversized); err != nil {
-			return nil, nil, err
-		}
+		chunks, oversized = c.fit(rows, first, last, chunks, oversized)
 		first = last + 1
 	}
-	return chunks, oversized, nil
+	return chunks, oversized
 }
 
 // fit compresses rows first..last, halving the range until every part fits in a request.
-func (c *Chunker) fit(rows [][]byte, first, last int, chunks []Chunk, oversized []int) ([]Chunk, []int, error) {
+func (c *Chunker) fit(rows [][]byte, first, last int, chunks []Chunk, oversized []int) ([]Chunk, []int) {
 	var raw bytes.Buffer
 	for _, row := range rows[first : last+1] {
 		raw.Write(row)
 		raw.WriteByte('\n')
 	}
-	body, err := compressor.Compress(raw.Bytes())
-	if err != nil {
-		return nil, nil, fmt.Errorf("compressing rows: %w", err)
-	}
+	body := encoder.EncodeAll(raw.Bytes(), nil)
 	if len(body) <= c.maxBodyBytes {
-		return append(chunks, Chunk{Body: body, First: first, Last: last}), oversized, nil
+		return append(chunks, Chunk{Body: body, First: first, Last: last}), oversized
 	}
 	if first == last {
-		return chunks, append(oversized, first), nil
+		return chunks, append(oversized, first)
 	}
 	mid := first + (last-first)/2
-	if chunks, oversized, err = c.fit(rows, first, mid, chunks, oversized); err != nil {
-		return nil, nil, err
-	}
+	chunks, oversized = c.fit(rows, first, mid, chunks, oversized)
 	return c.fit(rows, mid+1, last, chunks, oversized)
 }

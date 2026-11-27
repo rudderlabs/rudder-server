@@ -132,13 +132,27 @@ func (m *ManagerV2) Poll(_ context.Context, pollInput common.AsyncPoll) common.P
 	return m.base.buildPollStatusResponse(results, failed)
 }
 
+// statusResult is the status of an import's channel: nil if the channel (or its table) doesn't exist.
+type statusResult struct {
+	status *restapi.ChannelStatus
+	err    error
+}
+
 // checkImports reads the status of each import's channel and records the imports that reached a terminal state.
 // It returns the imports still in progress, including those whose status couldn't be read.
 func (m *ManagerV2) checkImports(ctx context.Context, database string, infos []*importInfo) []*importInfo {
-	type statusResult struct {
-		status *restapi.ChannelStatus
-		err    error
+	statuses := m.fetchStatuses(ctx, database, infos)
+	var inProgress []*importInfo
+	for _, info := range infos {
+		if m.resolve(info, statuses[info]) == importInProgress {
+			inProgress = append(inProgress, info)
+		}
 	}
+	return inProgress
+}
+
+// fetchStatuses reads the status of every import's channel, at most pollConcurrency at a time.
+func (m *ManagerV2) fetchStatuses(ctx context.Context, database string, infos []*importInfo) map[*importInfo]statusResult {
 	var (
 		mu       sync.Mutex
 		statuses = make(map[*importInfo]statusResult, len(infos))
@@ -148,71 +162,68 @@ func (m *ManagerV2) checkImports(ctx context.Context, database string, infos []*
 	for _, info := range infos {
 		g.Go(func() error {
 			pipe := restapi.DefaultPipe(lo.CoalesceOrEmpty(info.Database, database), info.Schema, info.Table)
-			res, found, err := m.bulkChannelStatus(gctx, pipe, info.ChannelID)
+			status, found, err := m.bulkChannelStatus(gctx, pipe, info.ChannelID)
 			if !found {
-				res = nil
+				status = nil
 			}
 			mu.Lock()
-			statuses[info] = statusResult{status: res, err: err}
+			statuses[info] = statusResult{status: status, err: err}
 			mu.Unlock()
-			return nil
+			return nil // a failed read leaves this import in progress, without stopping the others
 		})
 	}
 	_ = g.Wait()
+	return statuses
+}
 
-	var inProgress []*importInfo
-	for _, info := range infos {
-		log := m.logger.Withn(
-			logger.NewStringField("table", info.Table),
-			logger.NewStringField("channel", info.ChannelID),
-			logger.NewStringField("expectedOffset", info.Offset),
-		)
-		info.Failed, info.Reason, info.FailedJobIds = false, "", nil
+// resolve decides the state of one import from its channel's status, recording it when it is terminal.
+func (m *ManagerV2) resolve(info *importInfo, res statusResult) importState {
+	log := m.logger.Withn(
+		logger.NewStringField("table", info.Table),
+		logger.NewStringField("channel", info.ChannelID),
+		logger.NewStringField("expectedOffset", info.Offset),
+	)
+	info.Failed, info.Reason, info.FailedJobIds = false, "", nil
 
-		res := statuses[info]
-		switch {
-		case res.err != nil:
-			log.Warnn("Failed to get channel status, polling again", obskit.Error(res.err))
-			inProgress = append(inProgress, info)
-			continue
-		case res.status == nil:
-			m.stats.nullOffsetRecovery("channel_not_found").Increment()
-			m.markFailed(info, nil, "channel not found")
-			continue
-		case !res.status.Healthy():
-			m.markFailed(info, nil, fmt.Sprintf("channel status is %s", res.status.ChannelStatusCode))
-			continue
-		}
-
-		ch := m.channelFor(info)
-		m.recordRowErrors(log, ch, res.status)
-		appended := ""
-		if ch != nil {
-			appended = ch.appendedOffset
-			ch.committedOffset = res.status.CommittedOffset()
-		}
-
-		state, failedRange, err := resolveImport(res.status.CommittedOffset(), appended, info.Offset)
-		switch state {
-		case importCommitted:
-			m.polled[info.Table] = info
-		case importFailed:
-			branch := "lost"
-			if res.status.CommittedOffset() == "" {
-				branch = "empty_offset"
-			}
-			m.stats.nullOffsetRecovery(branch).Increment()
-			log.Warnn("Import failed",
-				logger.NewStringField("committedOffset", res.status.CommittedOffset()),
-				logger.NewStringField("appendedOffset", appended),
-				obskit.Error(err),
-			)
-			m.markFailed(info, failedRange, err.Error())
-		default:
-			inProgress = append(inProgress, info)
-		}
+	switch {
+	case res.err != nil:
+		log.Warnn("Failed to get channel status, polling again", obskit.Error(res.err))
+		return importInProgress
+	case res.status == nil:
+		m.stats.nullOffsetRecovery("channel_not_found").Increment()
+		m.markFailed(info, nil, "channel not found")
+		return importFailed
+	case !res.status.Healthy():
+		m.markFailed(info, nil, fmt.Sprintf("channel status is %s", res.status.ChannelStatusCode))
+		return importFailed
 	}
-	return inProgress
+
+	committed, appended := res.status.CommittedOffset(), ""
+	ch := m.channelFor(info)
+	m.recordRowErrors(log, ch, res.status)
+	if ch != nil {
+		appended = ch.appendedOffset
+		ch.committedOffset = committed
+	}
+
+	state, failedRange, err := resolveImport(committed, appended, info.Offset)
+	switch state {
+	case importCommitted:
+		m.polled[info.Table] = info
+	case importFailed:
+		branch := "lost"
+		if committed == "" {
+			branch = "empty_offset"
+		}
+		m.stats.nullOffsetRecovery(branch).Increment()
+		log.Warnn("Import failed",
+			logger.NewStringField("committedOffset", committed),
+			logger.NewStringField("appendedOffset", appended),
+			obskit.Error(err),
+		)
+		m.markFailed(info, failedRange, err.Error())
+	}
+	return state
 }
 
 func (m *ManagerV2) bulkChannelStatus(ctx context.Context, pipe restapi.PipeRef, channel string) (status *restapi.ChannelStatus, found bool, err error) {

@@ -150,11 +150,7 @@ func New(conf Config, opts ...Opt) (*Client, error) {
 // and invalidates every continuation token issued before. No offset token is ever passed: Snowflake keeps the
 // channel's committed offset, and passing one would overwrite it.
 func (c *Client) OpenChannel(ctx context.Context, ref ChannelRef) (*OpenChannelResponse, error) {
-	path := "/v2/streaming/databases/" + url.PathEscape(ref.Database) +
-		"/schemas/" + url.PathEscape(ref.Schema) +
-		"/pipes/" + url.PathEscape(ref.Pipe) +
-		"/channels/" + url.PathEscape(ref.Channel)
-	body, err := c.call(ctx, http.MethodPut, path, nil, []byte("{}"), contentTypeJSON, "")
+	body, err := c.call(ctx, http.MethodPut, "/v2/streaming"+channelPath(ref), nil, []byte("{}"), contentTypeJSON, "")
 	if err != nil {
 		return nil, fmt.Errorf("opening channel %s on pipe %s: %w", ref.Channel, ref.Pipe, err)
 	}
@@ -174,10 +170,7 @@ func (c *Client) AppendRows(ctx context.Context, ref ChannelRef, req AppendRowsR
 	if len(req.Body) > maxRequestBodyBytes {
 		return nil, &APIError{StatusCode: http.StatusRequestEntityTooLarge, Code: ErrCodeRequestBodyTooLarge, Message: fmt.Sprintf("body of %d bytes exceeds %d bytes", len(req.Body), maxRequestBodyBytes)}
 	}
-	path := "/v2/streaming/data/databases/" + url.PathEscape(ref.Database) +
-		"/schemas/" + url.PathEscape(ref.Schema) +
-		"/pipes/" + url.PathEscape(ref.Pipe) +
-		"/channels/" + url.PathEscape(ref.Channel) + "/rows"
+	path := "/v2/streaming/data" + channelPath(ref) + "/rows"
 	query := url.Values{}
 	query.Set("continuationToken", req.ContinuationToken)
 	if req.StartOffsetToken != "" {
@@ -200,24 +193,9 @@ func (c *Client) AppendRows(ctx context.Context, ref ChannelRef, req AppendRowsR
 	return &res, nil
 }
 
-// DropChannel drops a channel, discarding its uncommitted rows and its committed offset.
-// The next open starts the channel afresh, with no committed offset.
-func (c *Client) DropChannel(ctx context.Context, ref ChannelRef) error {
-	path := "/v2/streaming/databases/" + url.PathEscape(ref.Database) +
-		"/schemas/" + url.PathEscape(ref.Schema) +
-		"/pipes/" + url.PathEscape(ref.Pipe) +
-		"/channels/" + url.PathEscape(ref.Channel)
-	if _, err := c.call(ctx, http.MethodDelete, path, nil, nil, contentTypeJSON, ""); err != nil {
-		return fmt.Errorf("dropping channel %s on pipe %s: %w", ref.Channel, ref.Pipe, err)
-	}
-	return nil
-}
-
 // BulkChannelStatus returns the status of the given channels of a pipe. Channels that don't exist are absent from the result.
 func (c *Client) BulkChannelStatus(ctx context.Context, pipe PipeRef, channelNames []string) (map[string]ChannelStatus, error) {
-	path := "/v2/streaming/databases/" + url.PathEscape(pipe.Database) +
-		"/schemas/" + url.PathEscape(pipe.Schema) +
-		"/pipes/" + url.PathEscape(pipe.Pipe) + ":bulk-channel-status"
+	path := "/v2/streaming" + pipePath(pipe) + ":bulk-channel-status"
 	reqBody, err := jsonrs.Marshal(bulkChannelStatusRequest{ChannelNames: channelNames})
 	if err != nil {
 		return nil, fmt.Errorf("marshalling bulk channel status request: %w", err)
@@ -231,6 +209,18 @@ func (c *Client) BulkChannelStatus(ctx context.Context, pipe PipeRef, channelNam
 		return nil, fmt.Errorf("decoding bulk channel status response: %w", err)
 	}
 	return res.ChannelStatuses, nil
+}
+
+// pipePath is the path of a pipe, below the API's root.
+func pipePath(pipe PipeRef) string {
+	return "/databases/" + url.PathEscape(pipe.Database) +
+		"/schemas/" + url.PathEscape(pipe.Schema) +
+		"/pipes/" + url.PathEscape(pipe.Pipe)
+}
+
+// channelPath is the path of a channel, below the API's root.
+func channelPath(ref ChannelRef) string {
+	return pipePath(ref.PipeRef) + "/channels/" + url.PathEscape(ref.Channel)
 }
 
 // call sends a request to the ingest host and returns the body of a 200 response. Retries send the same body and

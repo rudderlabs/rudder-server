@@ -36,7 +36,7 @@ type Dispatcher struct {
 //
 // SnowpipeStreaming.highPerformance.enabled selects the high-performance path, and can be set per destination
 // (SnowpipeStreaming.<destinationID>.highPerformance.enabled) or per workspace (SnowpipeStreaming.<workspaceID>.highPerformance.enabled).
-func NewManager(conf *config.Config, log logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) *Dispatcher {
+func NewManager(conf *config.Config, log logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) common.AsyncDestinationManager {
 	v1 := New(conf, log, statsFactory, destination)
 	return &Dispatcher{
 		v1: v1,
