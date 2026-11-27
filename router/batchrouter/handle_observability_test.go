@@ -3,264 +3,66 @@ package batchrouter
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func TestEmitAsyncEventDeliveryTimeMetrics_NoAsyncDestinationStruct(t *testing.T) {
-	brt := &Handle{
-		logger:                 logger.NOP,
-		destType:               "MARKETO_BULK_UPLOAD",
-		asyncDestinationStruct: make(map[string]*common.AsyncDestinationStruct),
-	}
-	destinationID := "dest-123"
-	sourceID := "source-456"
-	workspaceID := "workspace-789"
-	jobID := int64(12345)
-
-	statusList := []*jobsdb.JobStatusT{
-		{
-			JobID:       jobID,
-			JobState:    jobsdb.Succeeded.State,
-			WorkspaceId: workspaceID,
-		},
-	}
-	require.NotPanics(t, func() {
-		brt.emitAsyncEventDeliveryTimeMetrics(sourceID, destinationID, statusList)
-	})
-}
-
 func TestEmitAsyncEventDeliveryTimeMetrics(t *testing.T) {
-	// Set up the batch router handle
-	brt := &Handle{
-		logger:                 logger.NOP,
-		destType:               "MARKETO_BULK_UPLOAD",
-		asyncDestinationStruct: make(map[string]*common.AsyncDestinationStruct),
+	receivedAt := time.Now().Add(-2 * time.Hour).Format(misc.RFC3339Milli)
+	validParameters := `{"received_at":"` + receivedAt + `","source_category":"cloud"}`
+
+	testCases := []struct {
+		name       string
+		jobState   string
+		parameters string
+		emitted    bool
+	}{
+		{name: "succeeded job", jobState: jobsdb.Succeeded.State, parameters: validParameters, emitted: true},
+		{name: "failed job", jobState: jobsdb.Failed.State, parameters: validParameters},
+		{name: "no job parameters", jobState: jobsdb.Succeeded.State},
+		{name: "no received_at", jobState: jobsdb.Succeeded.State, parameters: `{"source_category":"cloud"}`},
+		{name: "invalid received_at", jobState: jobsdb.Succeeded.State, parameters: `{"received_at":"invalid"}`},
 	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			statsStore := useMemStats(t)
+			brt := &Handle{logger: logger.NOP, destType: "MARKETO_BULK_UPLOAD"}
 
-	// Create test data
-	destinationID := "dest-123"
-	sourceID := "source-456"
-	workspaceID := "workspace-789"
-	jobID := int64(12345)
+			brt.emitAsyncEventDeliveryTimeMetrics("source-1", "dest-1", []*jobsdb.JobStatusT{{
+				JobID:         1,
+				JobState:      tc.jobState,
+				WorkspaceId:   "workspace-1",
+				JobParameters: []byte(tc.parameters),
+			}})
 
-	// Create a receivedAt time (2 hours ago)
-	receivedAt := time.Now().Add(-2 * time.Hour)
-	receivedAtStr := receivedAt.Format(misc.RFC3339Milli)
-
-	// Create job parameters with receivedAt
-	jobParams := map[string]any{
-		"source_id":       sourceID,
-		"destination_id":  destinationID,
-		"received_at":     receivedAtStr,
-		"source_category": "cloud",
-		"workspace_id":    workspaceID,
+			metrics := statsStore.GetByName("event_delivery_time")
+			if !tc.emitted {
+				require.Empty(t, metrics)
+				return
+			}
+			require.Len(t, metrics, 1)
+			require.Equal(t, stats.Tags{
+				"module":         "batch_router",
+				"destType":       "MARKETO_BULK_UPLOAD",
+				"workspaceId":    "workspace-1",
+				"sourceId":       "source-1",
+				"destID":         "dest-1",
+				"sourceCategory": "cloud",
+			}, metrics[0].Tags)
+			require.Len(t, metrics[0].Durations, 1)
+			require.GreaterOrEqual(t, metrics[0].Durations[0], 2*time.Hour)
+		})
 	}
-	jobParamsBytes, _ := jsonrs.Marshal(jobParams)
-
-	// Create destination config
-	destination := &backendconfig.DestinationT{
-		ID:   destinationID,
-		Name: "Test Marketo Destination",
-		DestinationDefinition: backendconfig.DestinationDefinitionT{
-			Name: "MARKETO_BULK_UPLOAD",
-		},
-	}
-
-	// Set up async destination struct
-	brt.asyncDestinationStruct[destinationID] = &common.AsyncDestinationStruct{
-		Destination: destination,
-		JobParameters: map[int64]json.RawMessage{
-			jobID: jobParamsBytes,
-		},
-	}
-
-	// Create job status list with successful job
-	statusList := []*jobsdb.JobStatusT{
-		{
-			JobID:       jobID,
-			JobState:    jobsdb.Succeeded.State,
-			WorkspaceId: workspaceID,
-		},
-	}
-
-	// Use NOP stats to avoid actual metric emission during test
-	originalStats := stats.Default
-	stats.Default = stats.NOP
-	defer func() {
-		stats.Default = originalStats
-	}()
-
-	// Call the function under test - should not panic
-	require.NotPanics(t, func() {
-		brt.emitAsyncEventDeliveryTimeMetrics(sourceID, destinationID, statusList)
-	})
-}
-
-func TestEmitAsyncEventDeliveryTimeMetrics_NoSuccessfulJobs(t *testing.T) {
-	brt := &Handle{
-		logger:                 logger.NOP,
-		destType:               "MARKETO_BULK_UPLOAD",
-		asyncDestinationStruct: make(map[string]*common.AsyncDestinationStruct),
-	}
-
-	destinationID := "dest-123"
-	sourceID := "source-456"
-	workspaceID := "workspace-789"
-
-	// Create destination
-	destination := &backendconfig.DestinationT{
-		ID:   destinationID,
-		Name: "Test Marketo Destination",
-	}
-
-	brt.asyncDestinationStruct[destinationID] = &common.AsyncDestinationStruct{
-		Destination:   destination,
-		JobParameters: make(map[int64]json.RawMessage),
-	}
-
-	// Create job status list with only failed jobs
-	statusList := []*jobsdb.JobStatusT{
-		{
-			JobID:       12345,
-			JobState:    jobsdb.Failed.State,
-			WorkspaceId: workspaceID,
-		},
-	}
-
-	// Use NOP stats to avoid actual metric emission during test
-	originalStats := stats.Default
-	stats.Default = stats.NOP
-	defer func() {
-		stats.Default = originalStats
-	}()
-
-	// Call the function under test - should not panic and should not emit metrics for failed jobs
-	require.NotPanics(t, func() {
-		brt.emitAsyncEventDeliveryTimeMetrics(sourceID, destinationID, statusList)
-	})
-}
-
-func TestEmitAsyncEventDeliveryTimeMetrics_MissingReceivedAt(t *testing.T) {
-	brt := &Handle{
-		logger:                 logger.NOP,
-		destType:               "MARKETO_BULK_UPLOAD",
-		asyncDestinationStruct: make(map[string]*common.AsyncDestinationStruct),
-	}
-
-	destinationID := "dest-123"
-	sourceID := "source-456"
-	workspaceID := "workspace-789"
-	jobID := int64(12345)
-
-	// Create job parameters WITHOUT receivedAt
-	jobParams := map[string]any{
-		"source_id":      sourceID,
-		"destination_id": destinationID,
-		// "received_at" is missing
-		"source_category": "cloud",
-	}
-	jobParamsBytes, _ := jsonrs.Marshal(jobParams)
-
-	destination := &backendconfig.DestinationT{
-		ID:   destinationID,
-		Name: "Test Marketo Destination",
-	}
-
-	brt.asyncDestinationStruct[destinationID] = &common.AsyncDestinationStruct{
-		Destination: destination,
-		JobParameters: map[int64]json.RawMessage{
-			jobID: jobParamsBytes,
-		},
-	}
-
-	statusList := []*jobsdb.JobStatusT{
-		{
-			JobID:       jobID,
-			JobState:    jobsdb.Succeeded.State,
-			WorkspaceId: workspaceID,
-		},
-	}
-
-	// Use NOP stats to avoid actual metric emission during test
-	originalStats := stats.Default
-	stats.Default = stats.NOP
-	defer func() {
-		stats.Default = originalStats
-	}()
-
-	// Call the function under test - should not panic when receivedAt is missing
-	require.NotPanics(t, func() {
-		brt.emitAsyncEventDeliveryTimeMetrics(sourceID, destinationID, statusList)
-	})
-}
-
-func TestEmitAsyncEventDeliveryTimeMetrics_InvalidReceivedAt(t *testing.T) {
-	brt := &Handle{
-		logger:                 logger.NOP,
-		destType:               "MARKETO_BULK_UPLOAD",
-		asyncDestinationStruct: make(map[string]*common.AsyncDestinationStruct),
-	}
-
-	destinationID := "dest-123"
-	sourceID := "source-456"
-	workspaceID := "workspace-789"
-	jobID := int64(12345)
-
-	// Create job parameters with invalid receivedAt format
-	jobParams := map[string]any{
-		"source_id":       sourceID,
-		"destination_id":  destinationID,
-		"received_at":     "invalid-time-format",
-		"source_category": "cloud",
-	}
-	jobParamsBytes, _ := jsonrs.Marshal(jobParams)
-
-	destination := &backendconfig.DestinationT{
-		ID:   destinationID,
-		Name: "Test Marketo Destination",
-	}
-
-	brt.asyncDestinationStruct[destinationID] = &common.AsyncDestinationStruct{
-		Destination: destination,
-		JobParameters: map[int64]json.RawMessage{
-			jobID: jobParamsBytes,
-		},
-	}
-
-	statusList := []*jobsdb.JobStatusT{
-		{
-			JobID:       jobID,
-			JobState:    jobsdb.Succeeded.State,
-			WorkspaceId: workspaceID,
-		},
-	}
-
-	// Use NOP stats to avoid actual metric emission during test
-	originalStats := stats.Default
-	stats.Default = stats.NOP
-	defer func() {
-		stats.Default = originalStats
-	}()
-
-	// Call the function under test - should not panic when receivedAt format is invalid
-	require.NotPanics(t, func() {
-		brt.emitAsyncEventDeliveryTimeMetrics(sourceID, destinationID, statusList)
-	})
 }
 
 // capturingJobService is a minimal rsources.JobService fake that records the

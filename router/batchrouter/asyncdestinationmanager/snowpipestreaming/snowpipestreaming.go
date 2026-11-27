@@ -236,6 +236,7 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 		importInfos                   []*importInfo
 		discardImportInfo             *importInfo
 		failedReason                  string
+		jobParameters                 = make(map[int64]json.RawMessage)
 	)
 	var (
 		abortedJobIDs []int64
@@ -286,6 +287,13 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 
 		importingJobIDs = append(importingJobIDs, info.jobIDs...)
 		importInfos = append(importInfos, imInfo)
+		if params, err := jsonrs.Marshal(jobImportingParameters{Table: info.tableName}); err != nil {
+			log.Warnn("Failed to marshal job importing parameters", obskit.Error(err))
+		} else {
+			for _, jobID := range info.jobIDs {
+				jobParameters[jobID] = params
+			}
+		}
 
 		if discardImInfo != nil && discardImportInfo == nil {
 			discardImportInfo = discardImInfo
@@ -354,16 +362,17 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 	m.stats.jobs.aborted.Count(len(abortedJobIDs))
 
 	return common.AsyncUploadOutput{
-		ImportingJobIDs:     importingJobIDs,
-		ImportingCount:      len(importingJobIDs),
-		ImportingParameters: importParameters,
-		FailedJobIDs:        failedJobIDs,
-		FailedReason:        failedReason,
-		FailedCount:         len(failedJobIDs),
-		AbortJobIDs:         abortedJobIDs,
-		AbortReason:         abortReason,
-		AbortCount:          len(abortedJobIDs),
-		DestinationID:       asyncDest.Destination.ID,
+		ImportingJobIDs:        importingJobIDs,
+		ImportingCount:         len(importingJobIDs),
+		ImportingParameters:    importParameters,
+		JobImportingParameters: jobParameters,
+		FailedJobIDs:           failedJobIDs,
+		FailedReason:           failedReason,
+		FailedCount:            len(failedJobIDs),
+		AbortJobIDs:            abortedJobIDs,
+		AbortReason:            abortReason,
+		AbortCount:             len(abortedJobIDs),
+		DestinationID:          asyncDest.Destination.ID,
 	}
 }
 
@@ -1205,7 +1214,12 @@ func (m *Manager) GetUploadStats(input common.GetUploadStatsInput) common.GetUpl
 		failedJobReasons = make(map[int64]string)
 	)
 	for _, job := range input.ImportingList {
-		tableName := gjson.GetBytes(job.EventPayload, "metadata.table").String()
+		table := gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.table")
+		if !table.Exists() {
+			// imports uploaded before the table was stored in job statuses
+			table = gjson.GetBytes(job.EventPayload, "metadata.table")
+		}
+		tableName := table.String()
 		if _, ok := succeededTables[tableName]; ok {
 			succeededJobIDs = append(succeededJobIDs, job.JobID)
 		}

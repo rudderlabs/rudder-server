@@ -1017,6 +1017,7 @@ func runRudderServer(
 	config.Set("DB.user", postgresContainer.User)
 	config.Set("DB.name", postgresContainer.Database)
 	config.Set("DB.password", postgresContainer.Password)
+	config.Set("BatchRouter.BQSTREAM_ALL_EVENTS.asyncWorker.enabled", os.Getenv("TEST_ASYNC_WORKER") == "true")
 	config.Set("BatchRouter.BQSTREAM_ALL_EVENTS.pingFrequency", "1s")                    // default 30s
 	config.Set("BatchRouter.BQSTREAM_ALL_EVENTS.uploadFreq", "1s")                       // default 30s
 	config.Set("BatchRouter.BQSTREAM_ALL_EVENTS.minIdleSleep", "1s")                     // default 2s

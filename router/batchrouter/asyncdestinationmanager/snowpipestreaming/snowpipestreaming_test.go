@@ -2,6 +2,7 @@ package snowpipestreaming
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -1674,10 +1675,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 			ImportingJobIDs:     []int64{1001, 1003},
 			ImportingCount:      2,
 			ImportingParameters: []byte(`{"importId":[{"channelId":"test-users-channel","offset":"1003","table":"USERS","failed":false,"reason":"","count":2}],"importCount":2}`),
-			AbortJobIDs:         []int64{1002, 1004},
-			AbortCount:          2,
-			AbortReason:         output.AbortReason,
-			DestinationID:       "test-destination",
+			JobImportingParameters: map[int64]json.RawMessage{
+				1001: []byte(`{"table":"USERS"}`),
+				1003: []byte(`{"table":"USERS"}`),
+			},
+			AbortJobIDs:   []int64{1002, 1004},
+			AbortCount:    2,
+			AbortReason:   output.AbortReason,
+			DestinationID: "test-destination",
 		}, output)
 		require.Contains(t, output.AbortReason, "Unknown error occurred")
 
@@ -1740,6 +1745,10 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, []int64{1002, 1003, 1001, 1004}, output.ImportingJobIDs)
 		require.Equal(t, 4, output.ImportingCount)
 		require.JSONEq(t, `{"importId":[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}],"importCount":4}`, string(output.ImportingParameters))
+		require.Len(t, output.JobImportingParameters, 4)
+		for jobID, table := range map[int64]string{1001: "USERS", 1002: "PRODUCTS", 1003: "PRODUCTS", 1004: "USERS"} {
+			require.JSONEq(t, `{"table":"`+table+`"}`, string(output.JobImportingParameters[jobID]))
+		}
 		require.Nil(t, output.FailedJobIDs)
 		require.Zero(t, output.FailedCount)
 		require.Equal(t, "test-destination", output.DestinationID)
@@ -3428,6 +3437,76 @@ func TestSnowpipeStreaming(t *testing.T) {
 				expectedFailedKeys:    []int64{1002, 2008, 2009},
 				expectedFailedReasons: map[int64]string{1002: "all users failed", 2008: "partial orders failure", 2009: "partial orders failure"},
 				expectedSucceededKeys: []int64{1001, 2007, 2010},
+			},
+			{
+				name:                "table from job status parameters",
+				failedJobParameters: `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"users polling failed","count":2}]`,
+				importingList: []*jobsdb.JobT{
+					{
+						JobID:         1001,
+						LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importIdRef":"ref","importCount":4,"metadata":{"table":"USERS"}}`)},
+					},
+					{
+						JobID:         1002,
+						LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importIdRef":"ref","importCount":4,"metadata":{"table":"PRODUCTS"}}`)},
+					},
+					{
+						JobID:         1003,
+						LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importIdRef":"ref","importCount":4,"metadata":{"table":"PRODUCTS"}}`)},
+					},
+					{
+						JobID:         1004,
+						LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importIdRef":"ref","importCount":4,"metadata":{"table":"USERS"}}`)},
+					},
+				},
+				expectedStatusCode:    http.StatusOK,
+				expectedFailedKeys:    []int64{1001, 1004},
+				expectedFailedReasons: map[int64]string{1001: "users polling failed", 1004: "users polling failed"},
+				expectedSucceededKeys: []int64{1002, 1003},
+			},
+			{
+				name:                "table from event payload when job status parameters have none",
+				failedJobParameters: `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"users polling failed","count":2}]`,
+				importingList: []*jobsdb.JobT{
+					{
+						JobID:         1001,
+						EventPayload:  []byte(`{"metadata":{"table":"USERS"}}`),
+						LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importIdRef":"ref","importCount":2}`)},
+					},
+					{
+						JobID:         1002,
+						EventPayload:  []byte(`{"metadata":{"table":"PRODUCTS"}}`),
+						LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importIdRef":"ref","importCount":2}`)},
+					},
+				},
+				expectedStatusCode:    http.StatusOK,
+				expectedFailedKeys:    []int64{1001},
+				expectedFailedReasons: map[int64]string{1001: "users polling failed"},
+				expectedSucceededKeys: []int64{1002},
+			},
+			{
+				name:                "table from job status parameters and event payload",
+				failedJobParameters: `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"users polling failed","count":2}]`,
+				importingList: []*jobsdb.JobT{
+					{
+						JobID:         1001,
+						LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importCount":3,"metadata":{"table":"USERS"}}`)},
+					},
+					{
+						JobID:         1002,
+						EventPayload:  []byte(`{"metadata":{"table":"PRODUCTS"}}`),
+						LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importCount":3}`)},
+					},
+					{
+						JobID:         1003,
+						EventPayload:  []byte(`{"metadata":{"table":"USERS"}}`),
+						LastJobStatus: jobsdb.JobStatusT{Parameters: []byte(`{"importCount":3,"metadata":{"table":"PRODUCTS"}}`)},
+					},
+				},
+				expectedStatusCode:    http.StatusOK,
+				expectedFailedKeys:    []int64{1001},
+				expectedFailedReasons: map[int64]string{1001: "users polling failed"},
+				expectedSucceededKeys: []int64{1002, 1003},
 			},
 		}
 

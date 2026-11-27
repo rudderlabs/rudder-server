@@ -120,6 +120,12 @@ var (
 		"brt_async_dest_events_per_file": {
 			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000,
 		},
+		"async_worker_batch_jobs": {
+			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000,
+		},
+		"async_worker_polls_per_import": {
+			1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000,
+		},
 		"backend_config_http_response_size": {
 			float64(10 * bytesize.B), float64(100 * bytesize.B),
 			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),

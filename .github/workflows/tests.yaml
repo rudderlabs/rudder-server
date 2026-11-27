@@ -281,7 +281,7 @@ jobs:
           DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
           FORCE_RUN_INTEGRATION_TESTS: "true"
   package-unit:
-    name: Package Unit
+    name: Package Unit (${{ matrix.package }}${{ matrix.async_worker && ', async worker' || '' }})
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -289,6 +289,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        async_worker: [false]
         package:
           - cluster
           - jobsdb
@@ -324,6 +325,10 @@ jobs:
             race: true
           - package: router
             exclude: router/batchrouter/asyncdestinationmanager/bing-ads
+          - package: integration_test/snowpipestreaming
+            async_worker: true
+          - package: integration_test/bqstreamallevents
+            async_worker: true
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
@@ -375,6 +380,7 @@ jobs:
           DOCKERHUB_REGISTRY_MIRROR_USERNAME: ${{ steps.login-ecr.outputs.docker_username_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
           DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
           RACE_ENABLED: ${{ matrix.race || false }}
+          TEST_ASYNC_WORKER: ${{ matrix.async_worker }}
           RSERVER_OAUTH_TEST_CREDENTIALS: ${{ secrets.RSERVER_OAUTH_TEST_CREDENTIALS }}
           FBLA_SRCHYDRATION_TEST_DATA: ${{ secrets.FBLA_SRCHYDRATION_TEST_DATA }}
           FORCE_RUN_INTEGRATION_TESTS: "true"

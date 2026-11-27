@@ -252,8 +252,9 @@ func unzip(zipFile, targetDir string) ([]string, error) {
 		}
 		defer rc.Close()
 
-		// Create the corresponding file in the target directory
-		path := filepath.Join(targetDir, f.Name)
+		// Create the corresponding file in the target directory, with a unique name: polls of different destinations
+		// can extract archives whose files have the same name at the same time
+		path := filepath.Join(targetDir, uuid.NewString())
 		if f.FileInfo().IsDir() {
 			// Create directories if the file is a directory
 			err = os.MkdirAll(path, f.Mode())
