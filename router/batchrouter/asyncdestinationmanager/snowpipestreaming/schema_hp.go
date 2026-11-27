@@ -47,10 +47,27 @@ func (s *sqlWarehouseSession) manager(ctx context.Context) (*snowflake.Snowflake
 	}
 	mgr, err := s.connect(ctx)
 	if err != nil {
+		if isConnectionRejected(err) {
+			// The credentials, role, database or warehouse are refused: retrying can't help, so, as on the classic path,
+			// the batch is aborted.
+			return nil, fmt.Errorf("connecting to snowflake: %w: %w", errAbort, err)
+		}
 		return nil, fmt.Errorf("connecting to snowflake: %w", err)
 	}
 	s.mgr = mgr
 	return mgr, nil
+}
+
+// isConnectionRejected reports whether Snowflake refused the connection itself, e.g. for a role, database or warehouse
+// that doesn't exist or isn't granted, rather than failing for a reason a retry could fix.
+func isConnectionRejected(err error) bool {
+	sfErr, ok := errors.AsType[*gosnowflake.SnowflakeError](err)
+	if !ok {
+		return false
+	}
+	return sfErr.SQLState == gosnowflake.SQLStateConnectionRejected ||
+		sfErr.Number == gosnowflake.ErrRoleNotExist ||
+		sfErr.Number == gosnowflake.ErrObjectNotExistOrAuthorized
 }
 
 // Columns reads the table's columns with SHOW COLUMNS, which, unlike INFORMATION_SCHEMA, doesn't need a warehouse.

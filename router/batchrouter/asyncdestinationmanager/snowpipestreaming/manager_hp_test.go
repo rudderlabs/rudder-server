@@ -1136,3 +1136,16 @@ func TestIsObjectNotFound(t *testing.T) {
 	require.False(t, isObjectNotFound(&gosnowflake.SnowflakeError{Number: gosnowflake.ErrObjectNotExistOrAuthorized}), "390201 is an authentication error")
 	require.False(t, isObjectNotFound(errors.New("002003 does not exist or not authorized")), "only the typed error counts")
 }
+
+func TestIsConnectionRejected(t *testing.T) {
+	rejected := map[string]error{
+		"role doesn't exist":    &gosnowflake.SnowflakeError{Number: gosnowflake.ErrRoleNotExist, SQLState: gosnowflake.SQLStateConnectionRejected},
+		"database or warehouse": &gosnowflake.SnowflakeError{Number: gosnowflake.ErrObjectNotExistOrAuthorized},
+		"any rejected login":    &gosnowflake.SnowflakeError{Number: 390420, SQLState: gosnowflake.SQLStateConnectionRejected},
+	}
+	for name, err := range rejected {
+		require.True(t, isConnectionRejected(fmt.Errorf("SF: snowflake alter session error : (%w)", err)), name)
+	}
+	require.False(t, isConnectionRejected(&gosnowflake.SnowflakeError{Number: 2003, SQLState: "42S02"}), "a missing table is not a rejected connection")
+	require.False(t, isConnectionRejected(errors.New("dial tcp: i/o timeout")), "network errors are retried")
+}
