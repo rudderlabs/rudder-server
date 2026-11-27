@@ -250,12 +250,9 @@ func (m *ManagerV2) ensureSchema(ctx context.Context, session warehouseSession, 
 	}
 
 	if missing := findNewColumns(eventSchema, schema); len(missing) > 0 {
+		// Not logged here: the caller logs the error once, and the metric is what alerting watches.
 		m.stats.schemaCacheMissOnSend.Count(len(missing))
-		log.Errorn("Columns still missing after adding them, not sending the batch",
-			logger.NewIntField("missing", int64(len(missing))),
-			logger.NewStringField("column", missing[0].Name),
-		)
-		return nil, fmt.Errorf("columns of %s still missing after adding them: %d, e.g. %s", table, len(missing), missing[0].Name)
+		return nil, fmt.Errorf("columns of %s still missing after adding them, not sending the batch: %d, e.g. %s", table, len(missing), missing[0].Name)
 	}
 	m.schemas.cache[key] = cachedSchema{schema: schema, fetchedAt: m.now()}
 	return schema, nil
