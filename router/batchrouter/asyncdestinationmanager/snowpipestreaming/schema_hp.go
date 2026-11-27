@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/snowflakedb/gosnowflake/v2"
 
@@ -275,4 +276,10 @@ func (m *ManagerV2) createTable(ctx context.Context, session warehouseSession, t
 		}
 	}
 	return nil
+}
+
+// cachedSchema is a table schema read from Snowflake.
+type cachedSchema struct {
+	schema    whutils.ModelTableSchema
+	fetchedAt time.Time
 }

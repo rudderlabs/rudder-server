@@ -2,9 +2,6 @@ package snowpipestreaming
 
 import (
 	"sync"
-	"time"
-
-	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // hpState is the per-destination state of the high-performance path that must survive the manager being rebuilt:
@@ -38,10 +35,4 @@ func (s *hpStates) get(destinationID string) *hpState {
 		s.byDestination[destinationID] = st
 	}
 	return st
-}
-
-// cachedSchema is a table schema read from Snowflake.
-type cachedSchema struct {
-	schema    whutils.ModelTableSchema
-	fetchedAt time.Time
 }
