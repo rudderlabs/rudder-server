@@ -286,8 +286,14 @@ func (m *ManagerV2) appendRows(ctx context.Context, ch *hpChannel, table string,
 //
 // The failed append may still have reached Snowflake (e.g. its response was lost after the retries), and the chunks
 // accepted before it aren't committed yet. Reopening the channel discards whatever isn't committed, so its committed
-// offset then tells exactly which chunks landed: those stay importing, every other one fails. If the channel can't
-// be reopened, the chunks accepted so far stay importing for poll to confirm, and the rest fail.
+// offset then tells which chunks landed: those stay importing, every other one fails. If the channel can't be
+// reopened, the chunks accepted so far stay importing for poll to confirm, and the rest fail.
+//
+// Snowflake reports the end offset of the last committed append, not the highest one, so a chunk landed only if the
+// committed offset moved during this upload to its end offset, or to that of a later chunk sent before the failure.
+// Comparing offsets for equality rather than order also holds when job IDs are below the channel's earlier committed
+// offset, e.g. after a partition migration. When it can't tell, it fails the chunk: a retry may duplicate a row, but
+// never loses one.
 func (m *ManagerV2) settleFailedAppend(ctx context.Context, ch *hpChannel, table string, chunks []restapi.Chunk, failed int, jobIDs []int64, log logger.Logger) (importing, failedJobs []int64) {
 	reopened, err := m.openChannel(ctx, ch.ref)
 	if err != nil {
@@ -296,15 +302,17 @@ func (m *ManagerV2) settleFailedAppend(ctx context.Context, ch *hpChannel, table
 		return chunkJobIDs(chunks[:failed], jobIDs), chunkJobIDs(chunks[failed:], jobIDs)
 	}
 	m.state.channels[table] = reopened
-	committed := lastOffset(reopened)
-	for _, c := range chunks {
-		if jobIDs[c.Last] <= committed {
-			importing = append(importing, chunkRows(c, jobIDs)...)
-		} else {
-			failedJobs = append(failedJobs, chunkRows(c, jobIDs)...)
+
+	landed := -1 // index of the last chunk known to have landed
+	if committed := reopened.committedOffset; committed != ch.committedOffset {
+		for i := failed; i >= 0; i-- {
+			if strconv.FormatInt(jobIDs[chunks[i].Last], 10) == committed {
+				landed = i
+				break
+			}
 		}
 	}
-	return importing, failedJobs
+	return chunkJobIDs(chunks[:landed+1], jobIDs), chunkJobIDs(chunks[landed+1:], jobIDs)
 }
 
 // chunkRows returns the job IDs of the rows in the chunk.

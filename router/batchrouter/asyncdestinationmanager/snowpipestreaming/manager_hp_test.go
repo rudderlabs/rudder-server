@@ -579,6 +579,53 @@ func TestManagerV2(t *testing.T) {
 		require.True(t, m.state.channels["TRACKS"].isBroken, "the channel is reopened before its next append")
 	})
 
+	t.Run("after a failed append, job IDs below the channel's earlier committed offset don't count as committed", func(t *testing.T) {
+		// After a partition migration, a batch can carry job IDs below what the channel already committed. Snowflake
+		// reports the end offset of the last committed append, so only an exact match says a chunk of this batch landed.
+		api, wh := newFakeHP(), newFakeWarehouse()
+		m := newTestManagerV2(t, api, wh, stats.NOP, nil, withMaxChunkRawBytes(1)) // one row per chunk
+		file, jobIDs := writeBatch(t, track(5000))
+		importID, _ := importIDOf(t, upload(m, file, jobIDs))
+		api.commit()
+		require.False(t, poll(m, importID).HasFailed) // the channel's committed offset is now 5000
+
+		failAt := api.appends + 2 // the second append of the next batch fails, after the retries
+		api.appendErr = func(_ restapi.ChannelRef, n int) error {
+			if n == failAt {
+				return &restapi.APIError{StatusCode: http.StatusServiceUnavailable, Message: "gave up"}
+			}
+			return nil
+		}
+		file, jobIDs = writeBatch(t, track(1), track(2), track(3))
+		out := upload(m, file, jobIDs)
+		require.Empty(t, out.ImportingJobIDs, "nothing of this batch committed: the reopen discarded chunk 1, and chunks 2-3 never landed")
+		require.Equal(t, []int64{1, 2, 3}, out.FailedJobIDs)
+	})
+
+	t.Run("after a failed append, a chunk counts as committed when the committed offset is its end offset", func(t *testing.T) {
+		api, wh := newFakeHP(), newFakeWarehouse()
+		m := newTestManagerV2(t, api, wh, stats.NOP, nil, withMaxChunkRawBytes(1))
+		file, jobIDs := writeBatch(t, track(5000))
+		importID, _ := importIDOf(t, upload(m, file, jobIDs))
+		api.commit()
+		require.False(t, poll(m, importID).HasFailed)
+
+		failAt := api.appends + 2
+		api.appendErr = func(_ restapi.ChannelRef, n int) error {
+			if n == failAt {
+				for _, ch := range api.channels {
+					api.commitN(ch, len(ch.pending)) // chunk 1 (job 1) commits while chunk 2 fails
+				}
+				return &restapi.APIError{StatusCode: http.StatusServiceUnavailable, Message: "gave up"}
+			}
+			return nil
+		}
+		file, jobIDs = writeBatch(t, track(1), track(2), track(3))
+		out := upload(m, file, jobIDs)
+		require.Equal(t, []int64{1}, out.ImportingJobIDs)
+		require.Equal(t, []int64{2, 3}, out.FailedJobIDs)
+	})
+
 	t.Run("an append whose response was lost but which landed is not failed", func(t *testing.T) {
 		api, wh := newFakeHP(), newFakeWarehouse()
 		m := newTestManagerV2(t, api, wh, stats.NOP, nil)
