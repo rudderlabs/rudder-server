@@ -2,6 +2,7 @@ package batchrouter
 
 import (
 	"context"
+	stdjson "encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -16,6 +17,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -622,6 +624,73 @@ func TestAsyncWorker(t *testing.T) {
 			require.True(t, slices.IsSorted(u))
 		}
 	})
+
+	for _, refs := range []bool{false, true} {
+		for _, enabled := range []bool{false, true} {
+			t.Run(fmt.Sprintf("the outcome of an import is read with the per-job importing parameters of its upload (async workers on: %t, import ID references: %t)", enabled, refs), func(t *testing.T) {
+				env := newAsyncWorkerTestEnv(t, pg, 1)
+				config.Set("BatchRouter."+asyncWorkerTestDestType+".asyncWorker.enabled", enabled)
+				config.Set("BatchRouter.writeImportIdRefs", refs)
+				dest := env.dests[0]
+				tables := map[int64]string{}      // job ID -> table returned by the upload
+				statsTables := map[int64]string{} // job ID -> table in the importing status that GetUploadStats receives
+				var statsWithRef []bool
+				env.set(func() {
+					env.upload = func(_ context.Context, destinationID string, jobIDs []int64) asynccommon.AsyncUploadOutput {
+						jobParameters := map[int64]stdjson.RawMessage{}
+						env.set(func() {
+							for _, id := range jobIDs {
+								tables[id] = fmt.Sprintf("TABLE_%d", id%3)
+								jobParameters[id] = fmt.Appendf(nil, `{"table":%q}`, tables[id])
+							}
+						})
+						return asynccommon.AsyncUploadOutput{
+							DestinationID:          destinationID,
+							ImportingJobIDs:        jobIDs,
+							ImportingParameters:    fmt.Appendf(nil, `{"importId":"import-1","importCount":%d}`, len(jobIDs)),
+							JobImportingParameters: jobParameters,
+						}
+					}
+					env.poll = func(context.Context, string, asynccommon.AsyncPoll) asynccommon.PollStatusResponse {
+						return asynccommon.PollStatusResponse{StatusCode: http.StatusOK, Complete: true, HasFailed: true}
+					}
+					env.uploadStats = func(_ string, input asynccommon.GetUploadStatsInput) asynccommon.GetUploadStatsResponse {
+						env.set(func() {
+							for _, job := range input.ImportingList {
+								statsTables[job.JobID] = gjson.GetBytes(job.LastJobStatus.Parameters, "metadata.table").String()
+								statsWithRef = append(statsWithRef, gjson.GetBytes(job.LastJobStatus.Parameters, importIDRefKey).Exists())
+							}
+						})
+						return asynccommon.GetUploadStatsResponse{StatusCode: http.StatusOK, Metadata: asynccommon.EventStatMeta{
+							SucceededKeys: lo.Map(input.ImportingList, func(j *jobsdb.JobT, _ int) int64 { return j.JobID }),
+						}}
+					}
+				})
+				env.storeJobs(dest, 10)
+				if enabled {
+					env.start()
+				} else {
+					// what the upload loop writes: running it would be a data race with the goroutines that fill its batch
+					brt, _ := env.setup()
+					res, err := env.db.GetUnprocessed(t.Context(), jobsdb.GetQueryParams{CustomValFilters: []string{asyncWorkerTestDestType}, JobsLimit: 10})
+					require.NoError(t, err)
+					brt.setMultipleJobStatus(setMultipleJobStatusParams{
+						asyncJobMetadata: newAsyncJobMetadata(res.Jobs),
+						AsyncOutput:      env.upload(t.Context(), dest, jobIDs(res.Jobs)),
+						Attempted:        true,
+					})
+					brt.Start()
+				}
+
+				env.requireJobsInState(dest, jobsdb.Succeeded.State, 10)
+				env.set(func() {
+					require.Len(t, tables, 10)
+					require.Equal(t, tables, statsTables)
+					require.Equal(t, slices.Repeat([]bool{refs}, 10), statsWithRef)
+				})
+			})
+		}
+	}
 
 	for _, refs := range []bool{false, true} {
 		t.Run(fmt.Sprintf("an import in progress is finished after a restart, without uploading its jobs again (import ID references: %t)", refs), func(t *testing.T) {

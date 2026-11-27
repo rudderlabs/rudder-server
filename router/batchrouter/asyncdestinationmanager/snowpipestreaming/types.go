@@ -115,6 +115,12 @@ type (
 		FailedJobIds *failedJobIds `json:"failedJobIds,omitempty"`
 	}
 
+	// jobImportingParameters are the parameters of an importing job; the batch router stores them under
+	// "metadata" in the job's importing status.
+	jobImportingParameters struct {
+		Table string `json:"table"`
+	}
+
 	discardInfo struct {
 		tableName   string
 		columnName  string
