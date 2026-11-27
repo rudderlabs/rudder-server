@@ -99,7 +99,7 @@ require (
 	github.com/rudderlabs/rudder-schemas v0.12.1
 	github.com/rudderlabs/rudder-transformer/go v1.164.0
 	github.com/rudderlabs/sql-tunnels v0.1.8
-	github.com/rudderlabs/sqlconnect-go v1.37.1
+	github.com/rudderlabs/sqlconnect-go v1.38.2
 	github.com/samber/lo v1.53.0
 	github.com/segmentio/go-hll v1.0.1
 	github.com/segmentio/kafka-go v0.4.51
@@ -334,7 +334,6 @@ require (
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/rs/zerolog v1.33.0 // indirect
-	github.com/rudderlabs/clickhouse-go/v2 v2.48.0 // indirect
 	github.com/rudderlabs/goqu/v10 v10.3.1 // indirect
 	github.com/rudderlabs/sonnet v1.0.2 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect

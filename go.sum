@@ -1748,8 +1748,6 @@ github.com/rudderlabs/analytics-go v3.3.3+incompatible h1:OG0XlKoXfr539e2t1dXtTB
 github.com/rudderlabs/analytics-go v3.3.3+incompatible/go.mod h1:LF8/ty9kUX4PTY3l5c97K3nZZaX5Hwsvt+NBaRL/f30=
 github.com/rudderlabs/bing-ads-go-sdk v0.3.0 h1:svyXg+9SZLLw4+PyEgRoz23i0twOfXw+ghyyoM00uo0=
 github.com/rudderlabs/bing-ads-go-sdk v0.3.0/go.mod h1:4Cy958qAnn452gqQ06mt7ceCaTc5Jv3zPVWX0/i7azY=
-github.com/rudderlabs/clickhouse-go/v2 v2.48.0 h1:+9QLweTrEIO2bLgXin+Tc8K4yPZC+AOMHzzQNLtlLyw=
-github.com/rudderlabs/clickhouse-go/v2 v2.48.0/go.mod h1:T6hz0WLZn/q9JDktBr8uKj7pBC46dIiIgtaRSDGPggQ=
 github.com/rudderlabs/compose-test v0.1.5 h1:yQ3ZlCN6/R28RgYN02+VzQaLVpLUbcBS7wFUOgX3I80=
 github.com/rudderlabs/compose-test v0.1.5/go.mod h1:DXv1yN7iWchR2CQ6OFzKZyxaeX/V6YibC1l0+4iASOw=
 github.com/rudderlabs/goqu/v10 v10.3.1 h1:rnfX+b4EwBWQ2UQfIGeEW299JBBkK5biEbnf7Kq4/Gg=
@@ -1774,8 +1772,8 @@ github.com/rudderlabs/sonnet v1.0.2 h1:nPfmDKD9gUwT571Dwtcsx0VIglSchvyNjuRLju4Xs
 github.com/rudderlabs/sonnet v1.0.2/go.mod h1:tjQmKEGAo/xwmhw9AwLkazP5b5m8VpUvWNzPSx4ve0g=
 github.com/rudderlabs/sql-tunnels v0.1.8 h1:owX5QL9BEXxtRW3a+JwMGlGQwpDUQGGtDOvnJG4evgs=
 github.com/rudderlabs/sql-tunnels v0.1.8/go.mod h1:/t75DbI2eQQsolWtHawF3MzIddI1iAhE7X/rTy3X27o=
-github.com/rudderlabs/sqlconnect-go v1.37.1 h1:ruIhL4FTWkBz44aQuxfucy7H8HUegucJZMsirTISCuo=
-github.com/rudderlabs/sqlconnect-go v1.37.1/go.mod h1:+k9TODqyFRbTCcyFSFupB6eFTOY+lDRgRlvfmAPTtlU=
+github.com/rudderlabs/sqlconnect-go v1.38.2 h1:UGMZDT+++gDsqCd/jQfMEua4eNarbcR507JVDQt/CjI=
+github.com/rudderlabs/sqlconnect-go v1.38.2/go.mod h1:DiOqJCf2fZzjJnacZ5MTmK6pHZdzafZ8F+KIIcuR6+s=
 github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/ruudk/golang-pdf417 v0.0.0-20181029194003-1af4ab5afa58/go.mod h1:6lfFZQK844Gfx8o5WFuvpxWRwnSoipWe/p622j1v06w=
@@ -1796,7 +1794,6 @@ github.com/segmentio/kafka-go v0.4.51 h1:JgDPPG75tC1rWIS2Me6MwcvXJ6f49UQ4HjAOef7
 github.com/segmentio/kafka-go v0.4.51/go.mod h1:Y1gn60kzLEEaW28YshXyk2+VCUKbJ3Qr6DrnT3i4+9E=
 github.com/segmentio/ksuid v1.0.4 h1:sBo2BdShXjmcugAMwjugoGUdUV0pcxY5mW4xKRn3v4c=
 github.com/segmentio/ksuid v1.0.4/go.mod h1:/XUiZBD3kVx5SmUOl55voK5yeAbBNNIed+2O73XgrPE=
-github.com/shirou/gopsutil v3.21.11+incompatible h1:+1+c1VGhc88SSonWP6foOcLhvnKlUeu/erjjvaPEYiI=
 github.com/shirou/gopsutil/v3 v3.24.5 h1:i0t8kL+kQTvpAYToeuiVk3TgDeKOFioZO3Ztz/iZ9pI=
 github.com/shirou/gopsutil/v3 v3.24.5/go.mod h1:bsoOS1aStSs9ErQ1WWfxllSeS1K5D+U30r2NfcubMVk=
 github.com/shirou/gopsutil/v4 v4.26.6 h1:Mzr/npDtQC/xpeEuQKHZt8Zo9CmPvhTj8nkR8w5TLDs=
