@@ -373,6 +373,15 @@ func TestAsyncWorker(t *testing.T) {
 			require.Equal(t, []int{1}, batchSizes(env))
 			require.Len(t, env.jobsInState(env.dests[0], jobsdb.Executing.State), 1)
 		})
+
+		t.Run("but not under memory pressure", func(t *testing.T) {
+			env := newEnv(t)
+			env.storeJobs(env.dests[0], 8)
+			w := env.newWorker()
+			w.brt.adaptiveLimit = func(int64) int64 { return 1 } // the limit when memory is critical
+			require.True(t, w.Work())
+			require.Len(t, env.jobsInState(env.dests[0], jobsdb.Executing.State), 1, "one fetch, then wait for a ping")
+		})
 	})
 
 	t.Run("a slow destination doesn't hold up the others", func(t *testing.T) {

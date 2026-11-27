@@ -422,11 +422,13 @@ func (w *asyncWorker) getJobs() []*jobsdb.JobT {
 	if w.batch.limits.jobs > 0 {
 		jobsLimit = min(jobsLimit, w.batch.limits.jobs-len(w.batch.jobs))
 	}
+	payloadLimit := brt.payloadLimit.Load()
+	adaptiveLimit := brt.adaptiveLimit(payloadLimit) // lower than payloadLimit under memory pressure
 	queryParams := jobsdb.GetQueryParams{
 		CustomValFilters: []string{brt.destType},
 		ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: w.destinationID}},
 		JobsLimit:        jobsLimit,
-		PayloadSizeLimit: min(brt.adaptiveLimit(brt.payloadLimit.Load()), int64(w.batch.limits.bytes-w.batch.size)),
+		PayloadSizeLimit: min(adaptiveLimit, int64(w.batch.limits.bytes-w.batch.size)),
 	}
 	queryStart := time.Now()
 	var res jobsdb.JobsResult
@@ -444,7 +446,9 @@ func (w *asyncWorker) getJobs() []*jobsdb.JobT {
 		query = len(res.Jobs) == 0 && res.DSLimitsReached
 	}
 	stats.Default.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "getJobs", "destType": brt.destType, "partition": w.destinationID}).Since(queryStart)
-	w.backlog = res.LimitsReached || res.DSLimitsReached
+	// under memory pressure, the next fetch waits for a ping
+	memoryPressure := adaptiveLimit < payloadLimit
+	w.backlog = !memoryPressure && (res.LimitsReached || res.DSLimitsReached)
 	brt.pipelineDelayStats(w.destinationID, lo.FirstOrEmpty(res.Jobs), lo.LastOrEmpty(res.Jobs))
 	return res.Jobs
 }
