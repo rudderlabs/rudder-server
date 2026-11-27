@@ -113,6 +113,17 @@ type (
 		// Marks a specific range of failed job IDs (partial failure).
 		// If all jobs have failed, this field may be nil.
 		FailedJobIds *failedJobIds `json:"failedJobIds,omitempty"`
+		// Version is the manager version that created the import: absent or 0 means classic (v1),
+		// [versionHP] means the high-performance REST path (v2). Polls always follow the version of the import.
+		Version int `json:"version,omitempty"`
+		// Schema is the namespace the import was written to. Only set on the high-performance path,
+		// where ChannelID is the channel name and the channel is addressed by database, schema and pipe.
+		Schema string `json:"schema,omitempty"`
+		// FirstOffset is the offset of the import's first row. Only set on the high-performance path, where it bounds
+		// which of the channel's committed offsets can belong to this import.
+		FirstOffset string `json:"firstOffset,omitempty"`
+		// Database is the database the import was written to. Only set on the high-performance path.
+		Database string `json:"database,omitempty"`
 	}
 
 	discardInfo struct {

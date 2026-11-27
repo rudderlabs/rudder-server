@@ -1,0 +1,428 @@
+package snowpipestreaming
+
+import (
+	"cmp"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strconv"
+
+	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/restapi"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+)
+
+// tableResult is the outcome of sending one table's events.
+type tableResult struct {
+	imported      *importInfo
+	discards      *importInfo
+	importingJobs []int64
+	failedJobs    []int64
+	failedReason  string
+	abortedJobs   []int64
+	abortReason   string
+}
+
+// abort adds aborted jobs, keeping the first reason.
+func (r *tableResult) abort(jobIDs []int64, reason string) {
+	r.abortedJobs = append(r.abortedJobs, jobIDs...)
+	if r.abortReason == "" {
+		r.abortReason = reason
+	}
+}
+
+// uploadResult accumulates the outcome of an upload, table by table.
+type uploadResult struct {
+	out         common.AsyncUploadOutput
+	importInfos []*importInfo
+	discards    *importInfo // a single import for the discards of every table
+}
+
+func (u *uploadResult) add(res tableResult) {
+	u.out.ImportingJobIDs = append(u.out.ImportingJobIDs, res.importingJobs...)
+	if res.imported != nil {
+		u.importInfos = append(u.importInfos, res.imported)
+	}
+	if res.discards != nil {
+		if u.discards == nil {
+			u.discards = res.discards
+		} else {
+			u.discards.Count += res.discards.Count
+			u.discards.Offset = res.discards.Offset
+		}
+	}
+	u.fail(res.failedJobs, res.failedReason)
+	u.abort(res.abortedJobs, res.abortReason)
+}
+
+// fail adds failed jobs, keeping the first reason.
+func (u *uploadResult) fail(jobIDs []int64, reason string) {
+	u.out.FailedJobIDs = append(u.out.FailedJobIDs, jobIDs...)
+	if u.out.FailedReason == "" && len(jobIDs) > 0 {
+		u.out.FailedReason = reason
+	}
+}
+
+// abort adds aborted jobs, keeping the first reason.
+func (u *uploadResult) abort(jobIDs []int64, reason string) {
+	u.out.AbortJobIDs = append(u.out.AbortJobIDs, jobIDs...)
+	if u.out.AbortReason == "" && len(jobIDs) > 0 {
+		u.out.AbortReason = reason
+	}
+}
+
+// output returns the upload's output, with the imports to poll as its importing parameters.
+func (u *uploadResult) output(destinationID string) (common.AsyncUploadOutput, error) {
+	importInfos := u.importInfos
+	if u.discards != nil {
+		importInfos = append(importInfos, u.discards)
+	}
+	if len(importInfos) > 0 {
+		params, err := jsonrs.Marshal(common.ImportParameters{ImportId: importInfos, ImportCount: len(u.out.ImportingJobIDs)})
+		if err != nil {
+			return common.AsyncUploadOutput{}, fmt.Errorf("marshalling import id: %w", err)
+		}
+		u.out.ImportingParameters = json.RawMessage(params)
+	}
+	u.out.ImportingCount = len(u.out.ImportingJobIDs)
+	u.out.FailedCount = len(u.out.FailedJobIDs)
+	u.out.AbortCount = len(u.out.AbortJobIDs)
+	u.out.DestinationID = destinationID
+	return u.out, nil
+}
+
+// Upload sends the batch to Snowflake, one channel per table, and returns the jobs to poll.
+func (m *ManagerV2) Upload(_ context.Context, asyncDest *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+	m.state.mu.Lock()
+	defer m.state.mu.Unlock()
+	m.logger.Infon("Uploading data to snowpipe streaming destination")
+
+	// Not the manager's context: cancelling requests in flight leaves their outcome unknown, causing duplicates on retry.
+	// Request timeouts still bound every call.
+	ctx := context.Background()
+
+	var destConf destConfig
+	if err := destConf.Decode(asyncDest.Destination.Config); err != nil {
+		return m.abortJobs(asyncDest, fmt.Errorf("decoding destination config: %w", err).Error())
+	}
+	if err := m.ensureAPI(&destConf); err != nil {
+		m.logger.Warnn("Failed to create snowflake client", obskit.Error(err))
+		return m.abortJobs(asyncDest, err.Error())
+	}
+	events, err := m.base.eventsFromFile(asyncDest.FileName, asyncDest.Count)
+	if err != nil {
+		return m.abortJobs(asyncDest, fmt.Errorf("reading events from file: %w", err).Error())
+	}
+
+	session := m.newSession(&destConf)
+	defer session.Close(ctx)
+
+	maxInsertRequestSizeBytes := m.base.config.maxInsertRequestSizeBytes.Load()
+	infos, overflowed, oversized := tablesToSend(events, maxInsertRequestSizeBytes)
+
+	var result uploadResult
+	for _, info := range infos {
+		result.add(m.sendTable(ctx, session, &destConf, info))
+	}
+	result.fail(jobIDsOf(overflowed), fmt.Sprintf("some events were not uploaded because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes))
+	result.abort(jobIDsOf(oversized), fmt.Sprintf("some events were aborted because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes))
+
+	out, err := result.output(asyncDest.Destination.ID)
+	if err != nil {
+		return m.abortJobs(asyncDest, err.Error())
+	}
+	m.stats.jobs.importing.Count(out.ImportingCount)
+	m.stats.jobs.failed.Count(out.FailedCount)
+	m.stats.jobs.aborted.Count(out.AbortCount)
+	m.logger.Infon("Uploaded data to snowpipe streaming destination",
+		logger.NewIntField("importing", int64(out.ImportingCount)),
+		logger.NewIntField("failed", int64(out.FailedCount)),
+		logger.NewIntField("aborted", int64(out.AbortCount)),
+	)
+	return out
+}
+
+// tablesToSend groups the events by table, in job ID order, and splits off those exceeding the max insert request size
+// (see [splitEventsExceedingMaxInsertRequestSize]). Events are sorted before splitting, so that the jobs left for a
+// retry come after the ones sent. Tables come in ascending latest job ID, so that offsets on the shared discards
+// channel only grow.
+func tablesToSend(events []*event, maxInsertRequestSizeBytes int64) (infos []*uploadInfo, overflowed, oversized []*event) {
+	grouped := lo.GroupBy(events, func(e *event) string { return e.Message.Metadata.Table })
+	for _, tableEvents := range grouped {
+		slices.SortStableFunc(tableEvents, func(a, b *event) int { return cmp.Compare(a.Metadata.JobID, b.Metadata.JobID) })
+	}
+	included, overflowed, oversized := splitEventsExceedingMaxInsertRequestSize(grouped, maxInsertRequestSizeBytes)
+	infos = lo.MapToSlice(included, func(table string, tableEvents []*event) *uploadInfo {
+		return &uploadInfo{
+			tableName:    table,
+			events:       tableEvents,
+			jobIDs:       jobIDsOf(tableEvents),
+			eventsSchema: schemaFromEvents(tableEvents),
+			latestJobID:  tableEvents[len(tableEvents)-1].Metadata.JobID,
+		}
+	})
+	slices.SortFunc(infos, func(a, b *uploadInfo) int { return cmp.Compare(a.latestJobID, b.latestJobID) })
+	return infos, overflowed, oversized
+}
+
+// sendTable sends one table's events: it makes sure the table has all their columns, prepares their values, sends
+// their discards, then appends their rows to the table's channel.
+func (m *ManagerV2) sendTable(ctx context.Context, session warehouseSession, destConf *destConfig, info *uploadInfo) tableResult {
+	log := m.logger.Withn(
+		append([]logger.Field{
+			logger.NewStringField("table", info.tableName),
+			logger.NewIntField("events", int64(len(info.events))),
+		}, jobIDRangeFields(info.jobIDs)...)...,
+	)
+
+	schema, err := m.ensureSchema(ctx, session, destConf.Namespace, info.tableName, info.eventsSchema)
+	if err != nil {
+		return failedTable(log, info, fmt.Errorf("preparing table %s: %w", info.tableName, err))
+	}
+
+	// Discards are sent before the table's rows, as on the classic path: if the rows then fail, the retry
+	// duplicates discards rather than rows.
+	var discardsImport *importInfo
+	if discards := m.prepareEvents(info, schema); len(discards) > 0 {
+		imported, sent, err := m.sendDiscards(ctx, session, destConf, discards, info.latestJobID)
+		if err != nil {
+			return failedTable(log, info, fmt.Errorf("sending discards for %s: %w", info.tableName, err))
+		}
+		if sent {
+			discardsImport = imported
+		}
+	}
+
+	ch, err := m.channel(ctx, session, destConf, info.tableName, info.eventsSchema)
+	if err != nil {
+		res := failedTable(log, info, err) // the error names the table's pipe
+		res.discards = discardsImport
+		return res
+	}
+	m.countDuplicates(log, ch, info)
+
+	rows, rowJobIDs, unmarshalable, marshalErr := marshalRows(info.events)
+	res := m.appendRows(ctx, ch, info.tableName, rows, rowJobIDs, log)
+	res.discards = discardsImport
+	if len(unmarshalable) > 0 {
+		res.abort(unmarshalable, fmt.Sprintf("marshalling event: %v", marshalErr))
+	}
+	log.Infon("Sent events", logger.NewIntField("importing", int64(len(res.importingJobs))))
+	return res
+}
+
+// failedTable fails all of a table's jobs, or aborts them if retrying can't help.
+func failedTable(log logger.Logger, info *uploadInfo, err error) tableResult {
+	log.Warnn("Failed to send events", obskit.Error(err))
+	if errors.Is(err, errAbort) {
+		return tableResult{abortedJobs: info.jobIDs, abortReason: err.Error()}
+	}
+	return tableResult{failedJobs: info.jobIDs, failedReason: err.Error()}
+}
+
+// prepareEvents detects the values that don't match the table's columns, which it returns as discards, and prepares
+// the other values for the high-performance architecture.
+func (m *ManagerV2) prepareEvents(info *uploadInfo, schema whutils.ModelTableSchema) []discardInfo {
+	formattedTS := m.now().Format(misc.RFC3339Milli)
+	var discards []discardInfo
+	for _, e := range info.events {
+		discards = append(discards, discardRecordsFromEvent(m.logger, e, schema, info.tableName, formattedTS, false)...)
+		prepareValuesHP(e, schema)
+	}
+	return discards
+}
+
+// marshalRows encodes each event's data as one JSON row. Events that can't be encoded are returned apart, with the last error.
+func marshalRows(events []*event) (rows [][]byte, jobIDs, unmarshalable []int64, lastErr error) {
+	rows = make([][]byte, 0, len(events))
+	jobIDs = make([]int64, 0, len(events))
+	for _, e := range events {
+		row, err := jsonrs.Marshal(e.Message.Data)
+		if err != nil {
+			unmarshalable, lastErr = append(unmarshalable, e.Metadata.JobID), err
+			continue
+		}
+		rows = append(rows, row)
+		jobIDs = append(jobIDs, e.Metadata.JobID)
+	}
+	return rows, jobIDs, unmarshalable, lastErr
+}
+
+// appendRows chunks the rows and appends the chunks in order, each chunk's end offset being its last job ID.
+// Rows too large for any request are aborted. If an append fails, [ManagerV2.settleFailedAppend] decides which
+// chunks stay importing.
+func (m *ManagerV2) appendRows(ctx context.Context, ch *hpChannel, table string, rows [][]byte, jobIDs []int64, log logger.Logger) tableResult {
+	var res tableResult
+	chunks, oversized := restapi.NewChunker(m.config.maxChunkRawBytes.Load()).Chunk(rows)
+	if len(oversized) > 0 {
+		res.abort(lo.Map(oversized, func(i, _ int) int64 { return jobIDs[i] }),
+			"some events were aborted because they exceed the 4 MiB request limit even when compressed")
+	}
+	for i, chunk := range chunks {
+		if err := m.appendChunk(ctx, ch, chunk.Body, jobIDs[chunk.First], jobIDs[chunk.Last]); err != nil {
+			log.Warnn("Failed to append rows, reopening the channel",
+				logger.NewIntField("chunk", int64(i)),
+				logger.NewIntField("chunks", int64(len(chunks))),
+				obskit.Error(err),
+			)
+			res.importingJobs, res.failedJobs = m.settleFailedAppend(ctx, ch, table, chunks, i, jobIDs, log)
+			res.failedReason = err.Error()
+			break
+		}
+		res.importingJobs = append(res.importingJobs, chunkRows(chunk, jobIDs)...)
+	}
+	if n := len(res.importingJobs); n > 0 {
+		res.imported = newImportInfo(ch, table, res.importingJobs[0], res.importingJobs[n-1], n)
+	}
+	return res
+}
+
+// settleFailedAppend decides the outcome of every chunk once the chunk at index failed did.
+//
+// The failed append may still have reached Snowflake (e.g. its response was lost after the retries), and the chunks
+// accepted before it aren't committed yet. Reopening the channel discards whatever isn't committed, so its committed
+// offset then tells which chunks landed: those stay importing, every other one fails. If the channel can't be
+// reopened, the chunks accepted so far stay importing for poll to confirm, and the rest fail.
+//
+// Snowflake reports the end offset of the last committed append, not the highest one, so a chunk landed only if the
+// committed offset moved during this upload to its end offset, or to that of a later chunk sent before the failure.
+// Comparing offsets for equality rather than order also holds when job IDs are below the channel's earlier committed
+// offset, e.g. after a partition migration. When it can't tell, it fails the chunk: a retry may duplicate a row, but
+// never loses one.
+func (m *ManagerV2) settleFailedAppend(ctx context.Context, ch *hpChannel, table string, chunks []restapi.Chunk, failed int, jobIDs []int64, log logger.Logger) (importing, failedJobs []int64) {
+	reopened, err := m.openChannel(ctx, ch.ref)
+	if err != nil {
+		log.Warnn("Failed to reopen channel after a failed append", obskit.Error(err))
+		ch.isBroken = true
+		return chunkJobIDs(chunks[:failed], jobIDs), chunkJobIDs(chunks[failed:], jobIDs)
+	}
+	m.state.channels[table] = reopened
+
+	landed := -1 // index of the last chunk known to have landed
+	if committed := reopened.committedOffset; committed != ch.committedOffset {
+		for i := failed; i >= 0; i-- {
+			if strconv.FormatInt(jobIDs[chunks[i].Last], 10) == committed {
+				landed = i
+				break
+			}
+		}
+	}
+	return chunkJobIDs(chunks[:landed+1], jobIDs), chunkJobIDs(chunks[landed+1:], jobIDs)
+}
+
+// chunkRows returns the job IDs of the rows in the chunk.
+func chunkRows(c restapi.Chunk, jobIDs []int64) []int64 {
+	return jobIDs[c.First : c.Last+1]
+}
+
+// newImportInfo returns the import of count rows appended to the channel, from offset first to offset last.
+func newImportInfo(ch *hpChannel, table string, first, last int64, count int) *importInfo {
+	return &importInfo{
+		ChannelID:   ch.ref.Channel,
+		Offset:      strconv.FormatInt(last, 10),
+		FirstOffset: strconv.FormatInt(first, 10),
+		Table:       table,
+		Count:       count,
+		Version:     versionHP,
+		Schema:      ch.ref.Schema,
+		Database:    ch.ref.Database,
+	}
+}
+
+// chunkJobIDs returns the job IDs of the rows in the chunks.
+func chunkJobIDs(chunks []restapi.Chunk, jobIDs []int64) []int64 {
+	var ids []int64
+	for _, c := range chunks {
+		ids = append(ids, chunkRows(c, jobIDs)...)
+	}
+	return ids
+}
+
+// sendDiscards sends the discarded values of one table to the discards table, with that table's latest job ID as offset.
+// sent is false when every discard was too large to send: nothing was appended, so there is no import to poll.
+func (m *ManagerV2) sendDiscards(ctx context.Context, session warehouseSession, destConf *destConfig, discards []discardInfo, offset int64) (imported *importInfo, sent bool, err error) {
+	table := discardsTable()
+	if _, err := m.ensureSchema(ctx, session, destConf.Namespace, table, discardsSchema()); err != nil {
+		return nil, false, fmt.Errorf("preparing discards table: %w", err)
+	}
+	ch, err := m.channel(ctx, session, destConf, table, discardsSchema())
+	if err != nil {
+		return nil, false, fmt.Errorf("opening discards channel: %w", err)
+	}
+	// Every table's discards share this channel, and a retried batch can carry job IDs below ones already sent.
+	// The offset must still grow, or poll would see an earlier, higher offset as this import's commit.
+	offset = max(offset, lastOffset(ch)+1)
+
+	rows := make([][]byte, 0, len(discards))
+	for _, row := range discardRowsHP(discards) {
+		b, err := jsonrs.Marshal(row)
+		if err != nil {
+			return nil, false, fmt.Errorf("marshalling discard: %w", err)
+		}
+		rows = append(rows, b)
+	}
+	chunks, oversizedRows := restapi.NewChunker(m.config.maxChunkRawBytes.Load()).Chunk(rows)
+	if len(oversizedRows) > 0 {
+		m.logger.Warnn("Dropping discards too large to send", logger.NewIntField("count", int64(len(oversizedRows))))
+	}
+	for _, chunk := range chunks {
+		if err := m.appendChunk(ctx, ch, chunk.Body, offset, offset); err != nil {
+			ch.isBroken = true
+			return nil, false, err
+		}
+	}
+	count := len(discards) - len(oversizedRows)
+	if count == 0 {
+		return nil, false, nil
+	}
+	m.stats.discards.Count(count)
+	return newImportInfo(ch, table, offset, offset, count), true, nil
+}
+
+// countDuplicates reports events that are likely duplicates, without dropping them: job IDs repeated in the batch,
+// and job IDs at or below the channel's committed offset. Job IDs are not unique across nodes after a partition
+// migration, so events are never skipped on this basis.
+func (m *ManagerV2) countDuplicates(log logger.Logger, ch *hpChannel, info *uploadInfo) {
+	if info.tableName == whutils.ToProviderCase(whutils.SnowpipeStreaming, whutils.UsersTable) {
+		return
+	}
+	if n := checkForDuplicateIDsInBatch(info.events); n > 0 {
+		log.Warnn("Duplicate ids found in the events", logger.NewIntField("duplicateEvents", int64(n)), logger.NewStringField("reason", "batch"))
+		m.stats.duplicateEventsInBatch.Count(n)
+	}
+	if ch.committedOffset == "" {
+		return
+	}
+	committed, err := strconv.ParseInt(ch.committedOffset, 10, 64)
+	if err != nil {
+		return
+	}
+	n := lo.CountBy(info.events, func(e *event) bool { return e.Metadata.JobID >= 0 && e.Metadata.JobID <= committed })
+	if n > 0 {
+		log.Warnn("Duplicate ids found in the events", logger.NewIntField("duplicateEvents", int64(n)), logger.NewStringField("reason", "offset"))
+		m.stats.duplicateEventsDueToOffset.Count(n)
+	}
+}
+
+func (m *ManagerV2) abortJobs(asyncDest *common.AsyncDestinationStruct, reason string) common.AsyncUploadOutput {
+	m.stats.jobs.aborted.Count(len(asyncDest.ImportingJobIDs))
+	return common.AsyncUploadOutput{
+		AbortJobIDs:   asyncDest.ImportingJobIDs,
+		AbortCount:    len(asyncDest.ImportingJobIDs),
+		AbortReason:   reason,
+		DestinationID: asyncDest.Destination.ID,
+	}
+}
+
+func jobIDsOf(events []*event) []int64 {
+	return lo.Map(events, func(e *event, _ int) int64 { return e.Metadata.JobID })
+}

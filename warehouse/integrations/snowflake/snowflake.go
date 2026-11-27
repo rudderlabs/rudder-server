@@ -1111,7 +1111,7 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB
 	alterStatement := `ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`
 	_, err = sqlDB.ExecContext(ctx, alterStatement)
 	if err != nil {
-		return nil, fmt.Errorf("SF: snowflake alter session error : (%v)", err)
+		return nil, fmt.Errorf("SF: snowflake alter session error : (%w)", err)
 	}
 	middleware := sqlmw.New(
 		sqlDB,
