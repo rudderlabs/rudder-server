@@ -2,6 +2,7 @@ package snowpipestreaming
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -122,14 +123,12 @@ func (m *ManagerV2) Poll(_ context.Context, pollInput common.AsyncPoll) common.P
 	}
 
 	results := lo.Map(infos, func(info *importInfo, _ int) *importInfo { return m.polled[info.Table] })
-	failed := lo.Filter(results, func(info *importInfo, _ int) bool { return info.Failed })
-	m.recoverFailedImports(ctx, destConf.Database, failed)
+	isFailed := func(info *importInfo, _ int) bool { return info.Failed }
+	m.recoverFailedImports(ctx, destConf.Database, lo.Filter(results, isFailed))
 	m.updateJobStatistics(results)
-	m.pollingStartTime = time.Time{}
-	m.polled = make(map[string]*importInfo)
-
-	failed = lo.Filter(results, func(info *importInfo, _ int) bool { return info.Failed })
-	return m.base.buildPollStatusResponse(results, failed)
+	m.resetPolling()
+	// Filtered again: recovering a failed import can find it committed after all.
+	return m.base.buildPollStatusResponse(results, lo.Filter(results, isFailed))
 }
 
 // statusResult is the status of an import's channel: nil if the channel (or its table) doesn't exist.
@@ -161,8 +160,7 @@ func (m *ManagerV2) fetchStatuses(ctx context.Context, database string, infos []
 	g.SetLimit(m.config.pollConcurrency.Load())
 	for _, info := range infos {
 		g.Go(func() error {
-			pipe := restapi.DefaultPipe(lo.CoalesceOrEmpty(info.Database, database), info.Schema, info.Table)
-			status, found, err := m.bulkChannelStatus(gctx, pipe, info.ChannelID)
+			status, found, err := m.bulkChannelStatus(gctx, pipeOf(info, database), info.ChannelID)
 			if !found {
 				status = nil
 			}
@@ -183,7 +181,7 @@ func (m *ManagerV2) resolve(info *importInfo, res statusResult) importState {
 		logger.NewStringField("channel", info.ChannelID),
 		logger.NewStringField("expectedOffset", info.Offset),
 	)
-	info.Failed, info.Reason, info.FailedJobIds = false, "", nil
+	clearFailure(info)
 
 	switch {
 	case res.err != nil:
@@ -199,9 +197,8 @@ func (m *ManagerV2) resolve(info *importInfo, res statusResult) importState {
 	}
 
 	committed, appended := res.status.CommittedOffset(), ""
-	ch := m.channelFor(info)
-	m.recordRowErrors(log, ch, res.status)
-	if ch != nil {
+	if ch := m.channelFor(info); ch != nil {
+		m.recordRowErrors(log, ch, res.status)
 		appended = ch.appendedOffset
 		ch.committedOffset = committed
 	}
@@ -246,15 +243,26 @@ func (m *ManagerV2) bulkChannelStatus(ctx context.Context, pipe restapi.PipeRef,
 
 // isTableGone reports whether Snowflake says the table, its default pipe or its schema no longer exists.
 func isTableGone(err error) bool {
-	return restapi.HasCode(err, restapi.ErrCodeTableDoesNotExist) ||
-		restapi.HasCode(err, restapi.ErrCodePipeDoesNotExist) ||
-		restapi.HasCode(err, restapi.ErrCodeSchemaDoesNotExist)
+	apiErr, ok := errors.AsType[*restapi.APIError](err)
+	if !ok {
+		return false
+	}
+	switch apiErr.Code {
+	case restapi.ErrCodeTableDoesNotExist, restapi.ErrCodePipeDoesNotExist, restapi.ErrCodeSchemaDoesNotExist:
+		return true
+	}
+	return false
+}
+
+// pipeOf returns the pipe an import was written to. Imports from before the database was recorded use the current one.
+func pipeOf(info *importInfo, database string) restapi.PipeRef {
+	return restapi.DefaultPipe(lo.CoalesceOrEmpty(info.Database, database), info.Schema, info.Table)
 }
 
 // channelFor returns the cached channel an import was written to, if this process still has it open.
 func (m *ManagerV2) channelFor(info *importInfo) *hpChannel {
 	ch, ok := m.state.channels[info.Table]
-	if !ok || ch.ref.Channel != info.ChannelID || ch.ref.Schema != info.Schema || (info.Database != "" && ch.ref.Database != info.Database) {
+	if !ok || ch.ref.Channel != info.ChannelID || !ch.writesTo(lo.CoalesceOrEmpty(info.Database, ch.ref.Database), info.Schema) {
 		return nil
 	}
 	return ch
@@ -264,9 +272,6 @@ func (m *ManagerV2) channelFor(info *importInfo) *hpChannel {
 // Snowflake commits the other rows, so retrying would duplicate them. rows_error_count is cumulative per channel,
 // so the delta since the channel was opened or last polled is reported, never a negative one.
 func (m *ManagerV2) recordRowErrors(log logger.Logger, ch *hpChannel, status *restapi.ChannelStatus) {
-	if ch == nil {
-		return
-	}
 	delta := status.RowsErrorCount - ch.rowsErrorBaseline
 	ch.rowsErrorBaseline = status.RowsErrorCount
 	if delta <= 0 {
@@ -282,13 +287,24 @@ func (m *ManagerV2) markFailed(info *importInfo, failedRange *failedJobIds, reas
 	m.polled[info.Table] = info
 }
 
+// clearFailure resets an import's failure, before it is resolved again.
+func clearFailure(info *importInfo) {
+	info.Failed, info.Reason, info.FailedJobIds = false, "", nil
+}
+
+// resetPolling forgets the polling state of the batch, once all its imports reached a terminal state.
+func (m *ManagerV2) resetPolling() {
+	m.pollingStartTime = time.Time{}
+	m.polled = make(map[string]*importInfo)
+}
+
 // recoverFailedImports reopens the channels of failed imports. Reopening discards their uncommitted rows, so the failed
 // jobs can't be committed after being retried. The committed offset at reopen is final: jobs at or below it are
 // committed, and only the jobs above it fail.
 func (m *ManagerV2) recoverFailedImports(ctx context.Context, database string, failed []*importInfo) {
 	for _, info := range failed {
 		log := m.logger.Withn(logger.NewStringField("table", info.Table), logger.NewStringField("channel", info.ChannelID))
-		ref := restapi.ChannelRef{PipeRef: restapi.DefaultPipe(lo.CoalesceOrEmpty(info.Database, database), info.Schema, info.Table), Channel: info.ChannelID}
+		ref := restapi.ChannelRef{PipeRef: pipeOf(info, database), Channel: info.ChannelID}
 		ch, err := m.openChannel(ctx, m.api, ref)
 		if err != nil {
 			// The next upload reopens it. Until then nothing else is appended, so the outcome stands.
@@ -302,7 +318,7 @@ func (m *ManagerV2) recoverFailedImports(ctx context.Context, database string, f
 		switch state {
 		case importCommitted:
 			log.Infon("Import committed before its channel was reopened", logger.NewStringField("committedOffset", ch.committedOffset))
-			info.Failed, info.Reason, info.FailedJobIds = false, "", nil
+			clearFailure(info)
 		case importFailed:
 			info.FailedJobIds = failedRange
 		}
@@ -316,8 +332,7 @@ func (m *ManagerV2) failAll(infos []*importInfo, err error) common.PollStatusRes
 		info.Failed, info.FailedJobIds, info.Reason = true, nil, err.Error()
 	}
 	m.updateJobStatistics(infos)
-	m.pollingStartTime = time.Time{}
-	m.polled = make(map[string]*importInfo)
+	m.resetPolling()
 	return m.base.buildPollStatusResponse(infos, infos)
 }
 

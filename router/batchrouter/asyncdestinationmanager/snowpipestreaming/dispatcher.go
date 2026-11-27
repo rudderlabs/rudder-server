@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -64,7 +65,7 @@ func (d *Dispatcher) Upload(ctx context.Context, asyncDest *common.AsyncDestinat
 func (d *Dispatcher) Poll(ctx context.Context, pollInput common.AsyncPoll) common.PollStatusResponse {
 	version, err := importVersion(pollInput.ImportId)
 	if err != nil {
-		d.logger.Errorn("Refusing to poll imports of mixed versions", logger.NewStringField("importID", pollInput.ImportId))
+		d.logger.Errorn("Refusing to poll imports of mixed versions", logger.NewStringField("importID", pollInput.ImportId), obskit.Error(err))
 		return common.PollStatusResponse{StatusCode: http.StatusBadRequest, Complete: true, HasFailed: true, Error: err.Error()}
 	}
 	if version == versionHP {

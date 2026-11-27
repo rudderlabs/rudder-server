@@ -109,6 +109,11 @@ type (
 	}
 )
 
+// writesTo reports whether the channel writes to the given database and schema.
+func (ch *hpChannel) writesTo(database, schema string) bool {
+	return ch.ref.Database == database && ch.ref.Schema == schema
+}
+
 // v2Opt configures a [ManagerV2].
 type v2Opt func(*ManagerV2)
 
@@ -141,6 +146,8 @@ func withClock(now func() time.Time) v2Opt {
 }
 
 // withMaxChunkRawBytes sets the uncompressed size compressed per chunk attempt, normally set in MB by config.
+//
+//nolint:unparam // tests only need one row per chunk so far
 func withMaxChunkRawBytes(n int) v2Opt {
 	return func(m *ManagerV2) {
 		m.config.maxChunkRawBytes = config.SingleValueLoader(n)
@@ -591,7 +598,7 @@ func (m *ManagerV2) sendDiscards(ctx context.Context, api hpAPI, session warehou
 // channel returns the open channel for the table, opening it if needed.
 // A new column is accepted on an open channel, so unlike the classic path, adding columns never reopens it.
 func (m *ManagerV2) channel(ctx context.Context, api hpAPI, session warehouseSession, destConf *destConfig, table string, eventSchema whutils.ModelTableSchema) (*hpChannel, error) {
-	if ch, ok := m.state.channels[table]; ok && !ch.broken && ch.ref.Database == destConf.Database && ch.ref.Schema == destConf.Namespace {
+	if ch, ok := m.state.channels[table]; ok && !ch.broken && ch.writesTo(destConf.Database, destConf.Namespace) {
 		return ch, nil
 	}
 	ref := restapi.ChannelRef{PipeRef: restapi.DefaultPipe(destConf.Database, destConf.Namespace, table), Channel: m.channelName}
