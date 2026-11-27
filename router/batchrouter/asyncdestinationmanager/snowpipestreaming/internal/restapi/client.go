@@ -150,7 +150,12 @@ func New(conf Config, opts ...Opt) (*Client, error) {
 // and invalidates every continuation token issued before. No offset token is ever passed: Snowflake keeps the
 // channel's committed offset, and passing one would overwrite it.
 func (c *Client) OpenChannel(ctx context.Context, ref ChannelRef) (*OpenChannelResponse, error) {
-	body, err := c.call(ctx, http.MethodPut, "/v2/streaming"+channelPath(ref), nil, []byte("{}"), contentTypeJSON, "")
+	body, err := c.call(ctx, request{
+		method:      http.MethodPut,
+		path:        "/v2/streaming" + channelPath(ref),
+		body:        []byte("{}"),
+		contentType: contentTypeJSON,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("opening channel %s on pipe %s: %w", ref.Channel, ref.Pipe, err)
 	}
@@ -168,7 +173,11 @@ func (c *Client) OpenChannel(ctx context.Context, ref ChannelRef) (*OpenChannelR
 // is deduplicated by Snowflake, so retries are safe.
 func (c *Client) AppendRows(ctx context.Context, ref ChannelRef, req AppendRowsRequest) (*AppendRowsResponse, error) {
 	if len(req.Body) > maxRequestBodyBytes {
-		return nil, &APIError{StatusCode: http.StatusRequestEntityTooLarge, Code: CodeRequestBodyTooLarge, Message: fmt.Sprintf("body of %d bytes exceeds %d bytes", len(req.Body), maxRequestBodyBytes)}
+		return nil, &APIError{
+			StatusCode: http.StatusRequestEntityTooLarge,
+			Code:       CodeRequestBodyTooLarge,
+			Message:    fmt.Sprintf("body of %d bytes exceeds %d bytes", len(req.Body), maxRequestBodyBytes),
+		}
 	}
 	path := "/v2/streaming/data" + channelPath(ref) + "/rows"
 	query := url.Values{}
@@ -179,7 +188,14 @@ func (c *Client) AppendRows(ctx context.Context, ref ChannelRef, req AppendRowsR
 	if req.EndOffsetToken != "" {
 		query.Set("endOffsetToken", req.EndOffsetToken)
 	}
-	body, err := c.call(ctx, http.MethodPost, path, query, req.Body, contentTypeNDJSON, "zstd")
+	body, err := c.call(ctx, request{
+		method:          http.MethodPost,
+		path:            path,
+		query:           query,
+		body:            req.Body,
+		contentType:     contentTypeNDJSON,
+		contentEncoding: "zstd",
+	})
 	if err != nil {
 		return nil, fmt.Errorf("appending rows to channel %s on pipe %s: %w", ref.Channel, ref.Pipe, err)
 	}
@@ -200,7 +216,7 @@ func (c *Client) BulkChannelStatus(ctx context.Context, pipe PipeRef, channelNam
 	if err != nil {
 		return nil, fmt.Errorf("marshalling bulk channel status request: %w", err)
 	}
-	body, err := c.call(ctx, http.MethodPost, path, nil, reqBody, contentTypeJSON, "")
+	body, err := c.call(ctx, request{method: http.MethodPost, path: path, body: reqBody, contentType: contentTypeJSON})
 	if err != nil {
 		return nil, fmt.Errorf("getting bulk channel status on pipe %s: %w", pipe.Pipe, err)
 	}
@@ -223,27 +239,38 @@ func channelPath(ref ChannelRef) string {
 	return pipePath(ref.PipeRef) + "/channels/" + url.PathEscape(ref.Channel)
 }
 
+// request is a call to the ingest host.
+type request struct {
+	method          string
+	path            string     // below the ingest host, e.g. /v2/streaming/databases/...
+	query           url.Values // optional; a request id is always added
+	body            []byte
+	contentType     string
+	contentEncoding string // optional
+}
+
 // call sends a request to the ingest host and returns the body of a 200 response. Retries send the same body and
 // request id; Snowflake deduplicates an append replayed with the same continuation token.
-func (c *Client) call(ctx context.Context, method, path string, query url.Values, body []byte, contentType, contentEncoding string) ([]byte, error) {
+func (c *Client) call(ctx context.Context, r request) ([]byte, error) {
 	host, err := c.host(ctx)
 	if err != nil {
 		return nil, err
 	}
+	query := r.query
 	if query == nil {
 		query = url.Values{}
 	}
 	query.Set("requestId", uuid.NewString())
 
-	req, err := retryablehttp.NewRequestWithContext(ctx, method, c.ingestScheme+"://"+host+path+"?"+query.Encode(), body)
+	req, err := retryablehttp.NewRequestWithContext(ctx, r.method, c.ingestScheme+"://"+host+r.path+"?"+query.Encode(), r.body)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set(headerSnowflakeAuthorizationToken, "OAUTH")
 	req.Header.Set("Accept", contentTypeJSON) // without it, Snowflake answers 400
-	req.Header.Set("Content-Type", contentType)
-	if contentEncoding != "" {
-		req.Header.Set("Content-Encoding", contentEncoding)
+	req.Header.Set("Content-Type", r.contentType)
+	if r.contentEncoding != "" {
+		req.Header.Set("Content-Encoding", r.contentEncoding)
 	}
 	if err := c.authorize(req.Request); err != nil {
 		return nil, err
